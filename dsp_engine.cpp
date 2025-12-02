@@ -748,7 +748,7 @@ void MiniAcid::reset() {
   muteClap = false;
   delay303Enabled = false;
   delay3032Enabled = false;
-  bpmValue = 110.0f;
+  bpmValue = 100.0f;
   currentStepIndex = -1;
   samplesIntoStep = 0;
   updateSamplesPerStep();
