@@ -200,7 +200,7 @@ void MiniAcidDisplay::update() {
   drawMutesSection(margin, content_h + margin, gfx_.width() - margin * 2, gfx_.height() - content_h - margin );
 
   int hint_w = textWidth(gfx_, "[< 0/0 >]");
-  drawPageHint(gfx_.width() - hint_w - margin, margin);
+  drawPageHint(gfx_.width() - hint_w - margin, margin + 2);
 
   gfx_.flush();
   gfx_.endWrite();
