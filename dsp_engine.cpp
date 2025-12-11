@@ -681,6 +681,7 @@ void MiniAcid::init() {
   sceneStorage_->initializeStorage();
   loadSceneFromStorage();
   reset();
+  applySceneStateFromManager();
 }
 
 void MiniAcid::reset() {
@@ -1171,10 +1172,68 @@ void MiniAcid::loadSceneFromStorage() {
 
 void MiniAcid::saveSceneToStorage() {
   if (!sceneStorage_) return;
+  syncSceneStateToManager();
   if (sceneStorage_->writeScene(sceneManager_)) return;
 
   std::string serialized = sceneManager_.dumpCurrentScene();
   sceneStorage_->writeScene(serialized);
+}
+
+void MiniAcid::applySceneStateFromManager() {
+  setBpm(sceneManager_.getBpm());
+  mute303 = sceneManager_.getSynthMute(0);
+  mute303_2 = sceneManager_.getSynthMute(1);
+
+  muteKick = sceneManager_.getDrumMute(kDrumKickVoice);
+  muteSnare = sceneManager_.getDrumMute(kDrumSnareVoice);
+  muteHat = sceneManager_.getDrumMute(kDrumHatVoice);
+  muteOpenHat = sceneManager_.getDrumMute(kDrumOpenHatVoice);
+  muteMidTom = sceneManager_.getDrumMute(kDrumMidTomVoice);
+  muteHighTom = sceneManager_.getDrumMute(kDrumHighTomVoice);
+  muteRim = sceneManager_.getDrumMute(kDrumRimVoice);
+  muteClap = sceneManager_.getDrumMute(kDrumClapVoice);
+
+  const SynthParameters& paramsA = sceneManager_.getSynthParameters(0);
+  const SynthParameters& paramsB = sceneManager_.getSynthParameters(1);
+
+  voice303.setParameter(TB303ParamId::Cutoff, paramsA.cutoff);
+  voice303.setParameter(TB303ParamId::Resonance, paramsA.resonance);
+  voice303.setParameter(TB303ParamId::EnvAmount, paramsA.envAmount);
+  voice303.setParameter(TB303ParamId::EnvDecay, paramsA.envDecay);
+
+  voice3032.setParameter(TB303ParamId::Cutoff, paramsB.cutoff);
+  voice3032.setParameter(TB303ParamId::Resonance, paramsB.resonance);
+  voice3032.setParameter(TB303ParamId::EnvAmount, paramsB.envAmount);
+  voice3032.setParameter(TB303ParamId::EnvDecay, paramsB.envDecay);
+}
+
+void MiniAcid::syncSceneStateToManager() {
+  sceneManager_.setBpm(bpmValue);
+  sceneManager_.setSynthMute(0, mute303);
+  sceneManager_.setSynthMute(1, mute303_2);
+
+  sceneManager_.setDrumMute(kDrumKickVoice, muteKick);
+  sceneManager_.setDrumMute(kDrumSnareVoice, muteSnare);
+  sceneManager_.setDrumMute(kDrumHatVoice, muteHat);
+  sceneManager_.setDrumMute(kDrumOpenHatVoice, muteOpenHat);
+  sceneManager_.setDrumMute(kDrumMidTomVoice, muteMidTom);
+  sceneManager_.setDrumMute(kDrumHighTomVoice, muteHighTom);
+  sceneManager_.setDrumMute(kDrumRimVoice, muteRim);
+  sceneManager_.setDrumMute(kDrumClapVoice, muteClap);
+
+  SynthParameters paramsA;
+  paramsA.cutoff = voice303.parameterValue(TB303ParamId::Cutoff);
+  paramsA.resonance = voice303.parameterValue(TB303ParamId::Resonance);
+  paramsA.envAmount = voice303.parameterValue(TB303ParamId::EnvAmount);
+  paramsA.envDecay = voice303.parameterValue(TB303ParamId::EnvDecay);
+  sceneManager_.setSynthParameters(0, paramsA);
+
+  SynthParameters paramsB;
+  paramsB.cutoff = voice3032.parameterValue(TB303ParamId::Cutoff);
+  paramsB.resonance = voice3032.parameterValue(TB303ParamId::Resonance);
+  paramsB.envAmount = voice3032.parameterValue(TB303ParamId::EnvAmount);
+  paramsB.envDecay = voice3032.parameterValue(TB303ParamId::EnvDecay);
+  sceneManager_.setSynthParameters(1, paramsB);
 }
 
 

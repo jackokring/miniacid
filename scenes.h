@@ -32,6 +32,13 @@ struct SynthPattern {
   SynthStep steps[kSteps];
 };
 
+struct SynthParameters {
+  float cutoff = 800.0f;
+  float resonance = 0.6f;
+  float envAmount = 400.0f;
+  float envDecay = 420.0f;
+};
+
 template <typename PatternType>
 struct Bank {
   static constexpr int kPatterns = 8;
@@ -46,7 +53,7 @@ struct Scene {
 
 class SceneJsonObserver : public JsonObserver {
 public:
-  explicit SceneJsonObserver(Scene& scene);
+  explicit SceneJsonObserver(Scene& scene, float defaultBpm = 100.0f);
 
   void onObjectStart() override;
   void onObjectEnd() override;
@@ -66,6 +73,10 @@ public:
   int synthPatternIndex(int synthIdx) const;
   int drumBankIndex() const;
   int synthBankIndex(int synthIdx) const;
+  bool drumMute(int idx) const;
+  bool synthMute(int idx) const;
+  const SynthParameters& synthParameters(int synthIdx) const;
+  float bpm() const;
 
 private:
   enum class Path {
@@ -82,6 +93,11 @@ private:
     State,
     SynthPatternIndex,
     SynthBankIndex,
+    Mute,
+    MuteDrums,
+    MuteSynth,
+    SynthParams,
+    SynthParam,
     Unknown,
   };
 
@@ -99,7 +115,7 @@ private:
   bool inSynthBankB() const;
   void pushContext(Context::Type type, Path path);
   void popContext();
-  void handlePrimitiveNumber(int value);
+  void handlePrimitiveNumber(double value, bool isInteger);
   void handlePrimitiveBool(bool value);
 
   static constexpr int kMaxStack = 16;
@@ -112,6 +128,10 @@ private:
   int synthPatternIndex_[2] = {0, 0};
   int drumBankIndex_ = 0;
   int synthBankIndex_[2] = {0, 0};
+  bool drumMute_[DrumPatternSet::kVoices] = {false, false, false, false, false, false, false, false};
+  bool synthMute_[2] = {false, false};
+  SynthParameters synthParameters_[2];
+  float bpm_ = 100.0f;
 };
 
 class SceneManager {
@@ -140,6 +160,15 @@ public:
   std::string dumpCurrentScene() const;
   bool loadScene(const std::string& json);
 
+  void setDrumMute(int voiceIdx, bool mute);
+  bool getDrumMute(int voiceIdx) const;
+  void setSynthMute(int synthIdx, bool mute);
+  bool getSynthMute(int synthIdx) const;
+  void setSynthParameters(int synthIdx, const SynthParameters& params);
+  const SynthParameters& getSynthParameters(int synthIdx) const;
+  void setBpm(float bpm);
+  float getBpm() const;
+
   template <typename TWriter>
   bool writeSceneJson(TWriter&& writer) const;
   template <typename TReader>
@@ -161,6 +190,10 @@ private:
   int synthPatternIndex_[2] = {0, 0};
   int drumBankIndex_ = 0;
   int synthBankIndex_[2] = {0, 0};
+  bool drumMute_[DrumPatternSet::kVoices] = {false, false, false, false, false, false, false, false};
+  bool synthMute_[2] = {false, false};
+  SynthParameters synthParameters_[2];
+  float bpm_ = 100.0f;
 };
 
 // inline constexpr size_t SceneManager::sceneJsonCapacity() {

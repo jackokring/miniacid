@@ -333,6 +333,8 @@ private:
 
   void loadSceneFromStorage();
   void saveSceneToStorage();
+  void applySceneStateFromManager();
+  void syncSceneStateToManager();
 };
 
 class PatternGenerator {
