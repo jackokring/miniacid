@@ -459,6 +459,8 @@ bool SceneManager::writeSceneJson(TWriter&& writer) const {
     if (!writeFloat(synthParameters_[i].envAmount)) return false;
     if (!writeLiteral(",\"envDecay\":")) return false;
     if (!writeFloat(synthParameters_[i].envDecay)) return false;
+    if (!writeLiteral(",\"oscType\":")) return false;
+    if (!writeInt(synthParameters_[i].oscType)) return false;
     if (!writeChar('}')) return false;
   }
   if (!writeChar(']')) return false;

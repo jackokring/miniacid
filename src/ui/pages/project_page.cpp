@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "../help_dialog.h"
+
 namespace {
 std::string generateMemorableName() {
   static const char* adjectives[] = {
@@ -314,6 +316,23 @@ const std::string & ProjectPage::getTitle() const {
   return title;
 }
 
+void ProjectPage::drawHelpBody(IGfx& gfx, int x, int y, int w, int h) {
+  (void)gfx;
+  (void)x;
+  (void)y;
+  (void)w;
+  (void)h;
+}
+
+bool ProjectPage::handleHelpEvent(UIEvent& ui_event) {
+  (void)ui_event;
+  return false;
+}
+
+bool ProjectPage::hasHelpDialog() {
+  return false;
+}
+
 void ProjectPage::draw(IGfx& gfx, int x, int y, int w, int h) {
   int body_y = y + 3;
   int body_h = h - 3;
@@ -445,4 +464,3 @@ void ProjectPage::draw(IGfx& gfx, int x, int y, int w, int h) {
     }
   }
 }
-

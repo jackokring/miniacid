@@ -8,8 +8,11 @@ class PatternEditPage : public IPage {
  public:
   PatternEditPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_guard, int voice_index);
   void draw(IGfx& gfx, int x, int y, int w, int h) override;
+  void drawHelpBody(IGfx& gfx, int x, int y, int w, int h) override;
   bool handleEvent(UIEvent& ui_event) override;
+  bool handleHelpEvent(UIEvent& ui_event) override;
   const std::string & getTitle() const override;
+  bool hasHelpDialog() override;
 
   int activePatternCursor() const;
   int activePatternStep() const;
@@ -36,4 +39,7 @@ class PatternEditPage : public IPage {
   int pattern_edit_cursor_;
   int pattern_row_cursor_;
   Focus focus_;
+  int help_page_index_ = 0;
+  int total_help_pages_ = 1;
+  std::string title_;
 };

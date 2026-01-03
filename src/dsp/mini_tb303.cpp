@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 namespace {
-const char* const kOscillatorOptions[] = {"saw", "sqr", "spr"};
+const char* const kOscillatorOptions[] = {"saw", "sqr", "super"};
 } // namespace
 
 ChamberlinFilter::ChamberlinFilter(float sampleRate) : _lp(0.0f), _bp(0.0f), _sampleRate(sampleRate) {
@@ -131,7 +131,7 @@ float TB303Voice::oscSuperSaw() {
   }
 
   // constexpr float kGain = 1.0f / (1.0f + TB303Voice::kSuperSawOscCount);
-  constexpr float kGain = 1.0f / (TB303Voice::kSuperSawOscCount - 1);
+  constexpr float kGain = 1.0f / (TB303Voice::kSuperSawOscCount - 5);
   return sum * kGain;
 }
 

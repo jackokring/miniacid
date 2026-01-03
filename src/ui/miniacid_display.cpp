@@ -103,6 +103,9 @@ void MiniAcidDisplay::update() {
   if (pages_[page_index_]) {
     int title_h = drawPageTitle(content_x, content_y, content_w, pages_[page_index_]->getTitle().c_str());
     pages_[page_index_]->draw(gfx_, content_x, content_y + title_h, content_w, content_h - title_h);
+    if (help_dialog_visible_ && pages_[page_index_]->hasHelpDialog()) {
+      drawHelpDialog(*pages_[page_index_], content_x, content_y + title_h, content_w, content_h - title_h);
+    }
   }
 
   drawMutesSection(margin, content_h + margin, gfx_.width() - margin * 2, gfx_.height() - content_h - margin );
@@ -143,9 +146,47 @@ void MiniAcidDisplay::drawSplashScreen() {
   int info_y = start_y + title_h + gap;
   centerText(info_y, "Use keys [ ] to move around", COLOR_WHITE);
   centerText(info_y + small_h, "Space - to start/stop sound", COLOR_WHITE);
+  centerText(info_y + 2 * small_h, "ESC - for help on each page", COLOR_WHITE);
 
   gfx_.flush();
   gfx_.endWrite();
+}
+
+void MiniAcidDisplay::drawHelpDialog(IPage& page, int x, int y, int w, int h) {
+  if (w <= 4 || h <= 4) return;
+
+  int dialog_margin = 2;
+  int dialog_x = x + dialog_margin;
+  int dialog_y = y + dialog_margin;
+  int dialog_w = w - dialog_margin * 2;
+  int dialog_h = h - dialog_margin * 2;
+  if (dialog_w <= 4 || dialog_h <= 4) return;
+
+  gfx_.fillRect(dialog_x, dialog_y, dialog_w, dialog_h, COLOR_DARKER);
+  gfx_.drawRect(dialog_x, dialog_y, dialog_w, dialog_h, COLOR_WHITE);
+
+  int legend_h = gfx_.fontHeight() + 4;
+  if (legend_h < 10) legend_h = 10;
+  int legend_y = dialog_y + dialog_h - legend_h;
+  if (legend_y <= dialog_y + 2) return;
+
+  gfx_.setTextColor(COLOR_LABEL);
+  gfx_.drawLine(dialog_x + 2, legend_y, dialog_x + dialog_w - 3, legend_y);
+
+  const char* legend = "ESC to close help";
+  int legend_x = dialog_x + (dialog_w - textWidth(gfx_, legend)) / 2;
+  if (legend_x < dialog_x + 4) legend_x = dialog_x + 4;
+  int legend_text_y = legend_y + (legend_h - gfx_.fontHeight()) / 2;
+  gfx_.drawText(legend_x, legend_text_y, legend);
+  gfx_.setTextColor(COLOR_WHITE);
+
+  int body_x = dialog_x + 4;
+  int body_y = dialog_y + 4;
+  int body_w = dialog_w - 8;
+  int body_h = legend_y - body_y - 2;
+  if (body_w <= 0 || body_h <= 0) return;
+
+  page.drawHelpBody(gfx_, body_x, body_y, body_w, body_h);
 }
 
 void MiniAcidDisplay::drawMutesSection(int x, int y, int w, int h) {
@@ -270,6 +311,24 @@ void MiniAcidDisplay::drawPageHint(int x, int y) {
 }
 
 bool MiniAcidDisplay::handleEvent(UIEvent event) {
+  if (event.event_type == MINIACID_KEY_DOWN && event.scancode == MINIACID_ESCAPE) {
+    if (page_index_ >= 0 && page_index_ < static_cast<int>(pages_.size()) && pages_[page_index_]) {
+      if (pages_[page_index_]->hasHelpDialog()) {
+        help_dialog_visible_ = !help_dialog_visible_;
+        update();
+        return true;
+      }
+    }
+  }
+
+  if (help_dialog_visible_) {
+    if (page_index_ >= 0 && page_index_ < static_cast<int>(pages_.size()) && pages_[page_index_]) {
+      bool handled = pages_[page_index_]->handleHelpEvent(event);
+      if (handled) update();
+    }
+    return true;
+  }
+
   switch(event.event_type) {
     case MINIACID_KEY_DOWN:
       if (event.key == '-') {

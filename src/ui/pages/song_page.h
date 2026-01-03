@@ -8,8 +8,11 @@ class SongPage : public IPage{
  public:
   SongPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_guard);
   void draw(IGfx& gfx, int x, int y, int w, int h) override;
+  void drawHelpBody(IGfx& gfx, int x, int y, int w, int h) override;
   bool handleEvent(UIEvent& ui_event) override;
+  bool handleHelpEvent(UIEvent& ui_event) override;
   const std::string & getTitle() const override;
+  bool hasHelpDialog() override;
 
   void setScrollToPlayhead(int playhead);
  private:
@@ -36,4 +39,6 @@ class SongPage : public IPage{
   int cursor_row_;
   int cursor_track_;
   int scroll_row_;
+  int help_page_index_ = 0;
+  int total_help_pages_ = 2;
 };

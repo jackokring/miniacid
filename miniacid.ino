@@ -90,80 +90,83 @@ void loop() {
     drawUI();
   }
 
-  if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
-    if (g_miniDisplay) g_miniDisplay->dismissSplash();
-    Keyboard_Class::KeysState ks = M5Cardputer.Keyboard.keysState();
+  static constexpr unsigned long KEY_REPEAT_DELAY_MS = 350;
+  static constexpr unsigned long KEY_REPEAT_INTERVAL_MS = 80;
+  static Keyboard_Class::KeysState lastKeysState{};
+  static bool hasLastKeys = false;
+  static unsigned long nextRepeatAt = 0;
 
-    auto handleWithFallback = [&](UIEvent evt) {
-      evt.event_type = MINIACID_KEY_DOWN;
-      bool handled = g_miniDisplay ? g_miniDisplay->handleEvent(evt) : false;
-      if (handled) return;
+  auto handleWithFallback = [&](UIEvent evt) {
+    evt.event_type = MINIACID_KEY_DOWN;
+    bool handled = g_miniDisplay ? g_miniDisplay->handleEvent(evt) : false;
+    if (handled) return;
 
-      char c = evt.key;
-      if (c == '\n' || c == '\r') {
-        if (g_miniDisplay) g_miniDisplay->dismissSplash();
-        drawUI();
-      } else if (c == '[') {
-        if (g_miniDisplay) g_miniDisplay->previousPage();
-        drawUI();
-      } else if (c == ']') {
-        if (g_miniDisplay) g_miniDisplay->nextPage();
-        drawUI();
-      } else if (c == 'i' || c == 'I') {
-        g_miniAcid.randomize303Pattern(0);
-        drawUI();
-      } else if (c == 'o' || c == 'O') {
-        g_miniAcid.randomize303Pattern(1);
-        drawUI();
-      } else if (c == 'p' || c == 'P') {
-        g_miniAcid.randomizeDrumPattern();
-        drawUI();
-      } else if (c == '1') {
-        g_miniAcid.toggleMute303(0);
-        drawUI();
-      } else if (c == '2') {
-        g_miniAcid.toggleMute303(1);
-        drawUI();
-      } else if (c == '3') {
-        g_miniAcid.toggleMuteKick();
-        drawUI();
-      } else if (c == '4') {
-        g_miniAcid.toggleMuteSnare();
-        drawUI();
-      } else if (c == '5') {
-        g_miniAcid.toggleMuteHat();
-        drawUI();
-      } else if (c == '6') {
-        g_miniAcid.toggleMuteOpenHat();
-        drawUI();
-      } else if (c == '7') {
-        g_miniAcid.toggleMuteMidTom();
-        drawUI();
-      } else if (c == '8') {
-        g_miniAcid.toggleMuteHighTom();
-        drawUI();
-      } else if (c == '9') {
-        g_miniAcid.toggleMuteRim();
-        drawUI();
-      } else if (c == '0') {
-        g_miniAcid.toggleMuteClap();
-        drawUI();
-      } else if (c == 'k' || c == 'K') {
-        g_miniAcid.setBpm(g_miniAcid.bpm() - 5.0f);
-        drawUI();
-      } else if (c == 'l' || c == 'L') {
-        g_miniAcid.setBpm(g_miniAcid.bpm() + 5.0f);
-        drawUI();
-      } else if (c == ' ') {
-        if (g_miniAcid.isPlaying()) {
-          g_miniAcid.stop();
-        } else {
-          g_miniAcid.start();
-        }
-        drawUI();
+    char c = evt.key;
+    if (c == '\n' || c == '\r') {
+      if (g_miniDisplay) g_miniDisplay->dismissSplash();
+      drawUI();
+    } else if (c == '[') {
+      if (g_miniDisplay) g_miniDisplay->previousPage();
+      drawUI();
+    } else if (c == ']') {
+      if (g_miniDisplay) g_miniDisplay->nextPage();
+      drawUI();
+    } else if (c == 'i' || c == 'I') {
+      g_miniAcid.randomize303Pattern(0);
+      drawUI();
+    } else if (c == 'o' || c == 'O') {
+      g_miniAcid.randomize303Pattern(1);
+      drawUI();
+    } else if (c == 'p' || c == 'P') {
+      g_miniAcid.randomizeDrumPattern();
+      drawUI();
+    } else if (c == '1') {
+      g_miniAcid.toggleMute303(0);
+      drawUI();
+    } else if (c == '2') {
+      g_miniAcid.toggleMute303(1);
+      drawUI();
+    } else if (c == '3') {
+      g_miniAcid.toggleMuteKick();
+      drawUI();
+    } else if (c == '4') {
+      g_miniAcid.toggleMuteSnare();
+      drawUI();
+    } else if (c == '5') {
+      g_miniAcid.toggleMuteHat();
+      drawUI();
+    } else if (c == '6') {
+      g_miniAcid.toggleMuteOpenHat();
+      drawUI();
+    } else if (c == '7') {
+      g_miniAcid.toggleMuteMidTom();
+      drawUI();
+    } else if (c == '8') {
+      g_miniAcid.toggleMuteHighTom();
+      drawUI();
+    } else if (c == '9') {
+      g_miniAcid.toggleMuteRim();
+      drawUI();
+    } else if (c == '0') {
+      g_miniAcid.toggleMuteClap();
+      drawUI();
+    } else if (c == 'k' || c == 'K') {
+      g_miniAcid.setBpm(g_miniAcid.bpm() - 5.0f);
+      drawUI();
+    } else if (c == 'l' || c == 'L') {
+      g_miniAcid.setBpm(g_miniAcid.bpm() + 5.0f);
+      drawUI();
+    } else if (c == ' ') {
+      if (g_miniAcid.isPlaying()) {
+        g_miniAcid.stop();
+      } else {
+        g_miniAcid.start();
       }
-    };
+      drawUI();
+    }
+  };
 
+  auto processKeys = [&](const Keyboard_Class::KeysState& ks) {
     for (auto hid : ks.hid_keys) {
       UIEvent evt{};
       evt.alt = ks.alt;
@@ -186,6 +189,9 @@ void loop() {
       } else if (hid == KEY_BACKSPACE) {
         evt.key = '\b';
         shouldSend = true;
+      } else if (hid == KEY_TAB) {
+        evt.key = '\t';
+        shouldSend = true;
       }
       if (shouldSend) {
         handleWithFallback(evt);
@@ -196,8 +202,28 @@ void loop() {
       UIEvent evt{};
       evt.alt = ks.alt;
       evt.key = inputChar;
+      if (evt.key == '`' || evt.key == '~') { // escape
+        evt.scancode = MINIACID_ESCAPE;
+      }
       handleWithFallback(evt);
     }
+  };
+
+  bool keyChanged = M5Cardputer.Keyboard.isChange();
+  bool keyPressed = M5Cardputer.Keyboard.isPressed();
+  if (keyChanged && keyPressed) {
+    if (g_miniDisplay) g_miniDisplay->dismissSplash();
+    Keyboard_Class::KeysState ks = M5Cardputer.Keyboard.keysState();
+    processKeys(ks);
+    lastKeysState = ks;
+    hasLastKeys = true;
+    nextRepeatAt = millis() + KEY_REPEAT_DELAY_MS;
+  } else if (!keyPressed) {
+    hasLastKeys = false;
+  } else if (hasLastKeys && millis() >= nextRepeatAt) {
+    if (g_miniDisplay) g_miniDisplay->dismissSplash();
+    processKeys(lastKeysState);
+    nextRepeatAt = millis() + KEY_REPEAT_INTERVAL_MS;
   }
 
   static unsigned long lastUIUpdate = 0;

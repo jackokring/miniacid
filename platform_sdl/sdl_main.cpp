@@ -66,12 +66,17 @@ static void handleEvents(AppState& s) {
         case SDL_SCANCODE_RIGHT:
           miniacidEvent.scancode = MINIACID_RIGHT;
           break;
+        case SDL_SCANCODE_ESCAPE:
+          miniacidEvent.scancode = MINIACID_ESCAPE;
+          break;
         default:
           break;
       }
       SDL_Keycode keycode = e.key.keysym.sym;
       if (keycode == SDLK_RETURN || keycode == SDLK_KP_ENTER) {
         miniacidEvent.key = '\n';
+      } else if (keycode == SDLK_TAB) {
+        miniacidEvent.key = '\t';
       } else if (keycode == SDLK_BACKSPACE) {
         miniacidEvent.key = '\b';
       } else if (keycode >= 32 && keycode < 127) {
@@ -104,87 +109,72 @@ static void handleEvents(AppState& s) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.randomize303Pattern(0);
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("Randomized 303A pattern\n");
       } else if (sc == SDL_SCANCODE_O) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.randomize303Pattern(1);
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("Randomized 303B pattern\n");
       } else if (sc == SDL_SCANCODE_P) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.randomizeDrumPattern();
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("Randomized drums\n");
       } else if (sc == SDL_SCANCODE_1) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.toggleMute303(0);
         bool muted = s.audio.synth.is303Muted(0);
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("303A %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_2) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.toggleMute303(1);
         bool muted = s.audio.synth.is303Muted(1);
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("303B %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_3) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.toggleMuteKick();
         bool muted = s.audio.synth.isKickMuted();
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("Kick %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_4) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.toggleMuteSnare();
         bool muted = s.audio.synth.isSnareMuted();
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("Snare %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_5) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.toggleMuteHat();
         bool muted = s.audio.synth.isHatMuted();
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("Hat %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_6) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.toggleMuteOpenHat();
         bool muted = s.audio.synth.isOpenHatMuted();
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("Open hat %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_7) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.toggleMuteMidTom();
         bool muted = s.audio.synth.isMidTomMuted();
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("Mid tom %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_8) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.toggleMuteHighTom();
         bool muted = s.audio.synth.isHighTomMuted();
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("High tom %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_9) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.toggleMuteRim();
         bool muted = s.audio.synth.isRimMuted();
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("Rim %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_0) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.toggleMuteClap();
         bool muted = s.audio.synth.isClapMuted();
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("Clap %s\n", muted ? "muted" : "unmuted");
       } else if (sc == SDL_SCANCODE_K) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.setBpm(s.audio.synth.bpm() - 5.0f);
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("BPM: %.1f\n", s.audio.synth.bpm());
       } else if (sc == SDL_SCANCODE_L) {
         SDL_LockAudioDevice(s.audio.device);
         s.audio.synth.setBpm(s.audio.synth.bpm() + 5.0f);
         SDL_UnlockAudioDevice(s.audio.device);
-        printf("BPM: %.1f\n", s.audio.synth.bpm());
       }
     }
   }
@@ -264,9 +254,6 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  printf("M I N I A C I D\n");
-  printf("Sample rate: %d Hz, buffer: %d samples\n", obtained.freq,
-         obtained.samples);
   SDL_PauseAudioDevice(state.audio.device, 0); // start playback
 
   state.ui = new MiniAcidDisplay(*state.gfx, state.audio.synth);

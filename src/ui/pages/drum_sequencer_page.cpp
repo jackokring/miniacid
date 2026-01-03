@@ -3,6 +3,8 @@
 #include <cctype>
 #include <cstdio>
 
+#include "../help_dialog.h"
+
 DrumSequencerPage::DrumSequencerPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_guard)
   : gfx_(gfx),
     mini_acid_(mini_acid),
@@ -181,6 +183,41 @@ const std::string & DrumSequencerPage::getTitle() const {
   return title;
 }
 
+void DrumSequencerPage::drawHelpBody(IGfx& gfx, int x, int y, int w, int h) {
+  if (w <= 0 || h <= 0) return;
+  switch (help_page_index_) {
+    case 0:
+      drawHelpPageDrumPatternEdit(gfx, x, y, w, h);
+      break;
+    default:
+      break;
+  }
+  drawHelpScrollbar(gfx, x, y, w, h, help_page_index_, total_help_pages_);
+}
+
+bool DrumSequencerPage::handleHelpEvent(UIEvent& ui_event) {
+  if (ui_event.event_type != MINIACID_KEY_DOWN) return false;
+  int next = help_page_index_;
+  switch (ui_event.scancode) {
+    case MINIACID_UP:
+      next -= 1;
+      break;
+    case MINIACID_DOWN:
+      next += 1;
+      break;
+    default:
+      return false;
+  }
+  if (next < 0) next = 0;
+  if (next >= total_help_pages_) next = total_help_pages_ - 1;
+  help_page_index_ = next;
+  return true;
+}
+
+bool DrumSequencerPage::hasHelpDialog() {
+  return true;
+}
+
 void DrumSequencerPage::draw(IGfx& gfx, int x, int y, int w, int h) {
   int body_y = y + 2;
   int body_h = h - 2;
@@ -294,4 +331,3 @@ void DrumSequencerPage::draw(IGfx& gfx, int x, int y, int w, int h) {
     }
   }
 }
-

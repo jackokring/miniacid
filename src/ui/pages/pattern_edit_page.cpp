@@ -3,6 +3,8 @@
 #include <cctype>
 #include <cstdio>
 
+#include "../help_dialog.h"
+
 PatternEditPage::PatternEditPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_guard, int voice_index)
   : gfx_(gfx),
     mini_acid_(mini_acid),
@@ -14,6 +16,7 @@ PatternEditPage::PatternEditPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& aud
   int idx = mini_acid_.current303PatternIndex(voice_index_);
   if (idx < 0 || idx >= Bank<SynthPattern>::kPatterns) idx = 0;
   pattern_row_cursor_ = idx;
+  title_ = voice_index_ == 0 ? "303A PATTERNS" : "303B PATTERNS";
 }
 
 int PatternEditPage::clampCursor(int cursorIndex) const {
@@ -138,8 +141,42 @@ void PatternEditPage::movePatternCursorVertical(int delta) {
 }
 
 const std::string & PatternEditPage::getTitle() const {
-  static std::string title = voice_index_ == 0 ? "303A EDIT" : "303B EDIT";
-  return title;
+  return title_;
+}
+
+void PatternEditPage::drawHelpBody(IGfx& gfx, int x, int y, int w, int h) {
+  if (w <= 0 || h <= 0) return;
+  switch (help_page_index_) {
+    case 0:
+      drawHelpPage303PatternEdit(gfx, x, y, w, h);
+      break;
+    default:
+      break;
+  }
+  drawHelpScrollbar(gfx, x, y, w, h, help_page_index_, total_help_pages_);
+}
+
+bool PatternEditPage::handleHelpEvent(UIEvent& ui_event) {
+  if (ui_event.event_type != MINIACID_KEY_DOWN) return false;
+  int next = help_page_index_;
+  switch (ui_event.scancode) {
+    case MINIACID_UP:
+      next -= 1;
+      break;
+    case MINIACID_DOWN:
+      next += 1;
+      break;
+    default:
+      return false;
+  }
+  if (next < 0) next = 0;
+  if (next >= total_help_pages_) next = total_help_pages_ - 1;
+  help_page_index_ = next;
+  return true;
+}
+
+bool PatternEditPage::hasHelpDialog() {
+  return true;
 }
 
 bool PatternEditPage::handleEvent(UIEvent& ui_event) {
@@ -349,4 +386,3 @@ void PatternEditPage::draw(IGfx& gfx, int x, int y, int w, int h) {
     gfx.drawText(tx, ty, note_label);
   }
 }
-
