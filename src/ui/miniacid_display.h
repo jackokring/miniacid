@@ -19,6 +19,7 @@ public:
   bool handleEvent(UIEvent event);
 
 private:
+  void initMuteButtons(int x, int y, int w, int h);
   void drawMutesSection(int x, int y, int w, int h);
   int drawPageTitle(int x, int y, int w, const char* text);
   void drawPageHint(int x, int y);
@@ -36,4 +37,6 @@ private:
   AudioGuard audio_guard_;
   IAudioRecorder* audio_recorder_ = nullptr;
   std::vector<std::unique_ptr<IPage>> pages_;
+  Container mute_buttons_container_;
+  bool mute_buttons_initialized_ = false;
 };

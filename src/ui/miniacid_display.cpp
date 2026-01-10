@@ -22,6 +22,7 @@
 #include "pages/song_page.h"
 #include "pages/tb303_params_page.h"
 #include "pages/waveform_page.h"
+#include "components/mute_button.h"
 
 namespace {
 unsigned long nowMillis() {
@@ -171,73 +172,45 @@ void MiniAcidDisplay::drawSplashScreen() {
   gfx_.endWrite();
 }
 
-void MiniAcidDisplay::drawMutesSection(int x, int y, int w, int h) {
-  int lh = 16;
-  int yy = y;
-
+void MiniAcidDisplay::initMuteButtons(int x, int y, int w, int h) {
   int rect_w = w / 10;
+  
+  struct MuteButtonConfig {
+    const char* label;
+    std::function<bool()> is_muted;
+    std::function<void()> toggle;
+    int index;
+  };
+  
+  std::vector<MuteButtonConfig> configs = {
+    {"S1", [this]() { return mini_acid_.is303Muted(0); }, [this]() { mini_acid_.toggleMute303(0); }, 0},
+    {"S2", [this]() { return mini_acid_.is303Muted(1); }, [this]() { mini_acid_.toggleMute303(1); }, 1},
+    {"BD", [this]() { return mini_acid_.isKickMuted(); }, [this]() { mini_acid_.toggleMuteKick(); }, 2},
+    {"SD", [this]() { return mini_acid_.isSnareMuted(); }, [this]() { mini_acid_.toggleMuteSnare(); }, 3},
+    {"CH", [this]() { return mini_acid_.isHatMuted(); }, [this]() { mini_acid_.toggleMuteHat(); }, 4},
+    {"OH", [this]() { return mini_acid_.isOpenHatMuted(); }, [this]() { mini_acid_.toggleMuteOpenHat(); }, 5},
+    {"MT", [this]() { return mini_acid_.isMidTomMuted(); }, [this]() { mini_acid_.toggleMuteMidTom(); }, 6},
+    {"HT", [this]() { return mini_acid_.isHighTomMuted(); }, [this]() { mini_acid_.toggleMuteHighTom(); }, 7},
+    {"RS", [this]() { return mini_acid_.isRimMuted(); }, [this]() { mini_acid_.toggleMuteRim(); }, 8},
+    {"CP", [this]() { return mini_acid_.isClapMuted(); }, [this]() { mini_acid_.toggleMuteClap(); }, 9},
+  };
+  
+  for (const auto& config : configs) {
+    auto button = std::make_shared<MuteButton>(config.label, config.is_muted, config.toggle);
+    button->setBoundaries(Rect(x + rect_w * config.index, y, rect_w, h));
+    mute_buttons_container_.addChild(button);
+  }
+  
+  mute_buttons_initialized_ = true;
+}
 
+void MiniAcidDisplay::drawMutesSection(int x, int y, int w, int h) {
+  if (!mute_buttons_initialized_) {
+    initMuteButtons(x, y, w, h);
+  }
+  
   gfx_.setTextColor(COLOR_WHITE);
-
-  if (!mini_acid_.is303Muted(0)) {
-    gfx_.fillRect(x + rect_w * 0 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_MUTE_BACKGROUND);
-  }
-  gfx_.drawRect(x + rect_w * 0 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_WHITE);
-  gfx_.drawText(x + rect_w * 0 + 6, yy + 6, "S1");
-
-  if (!mini_acid_.is303Muted(1)) {
-    gfx_.fillRect(x + rect_w * 1 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_MUTE_BACKGROUND);
-  }
-  gfx_.drawRect(x + rect_w * 1 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_WHITE);
-  gfx_.drawText(x + rect_w * 1 + 6, yy + 6, "S2");
-
-  if (!mini_acid_.isKickMuted()) {
-    gfx_.fillRect(x + rect_w * 2 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_MUTE_BACKGROUND);
-  }
-  gfx_.drawRect(x + rect_w * 2 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_WHITE);
-  gfx_.drawText(x + rect_w * 2 + 6, yy + 6, "BD");
-
-  if (!mini_acid_.isSnareMuted()) {
-    gfx_.fillRect(x + rect_w * 3 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_MUTE_BACKGROUND);
-  }
-  gfx_.drawRect(x + rect_w * 3 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_WHITE);
-  gfx_.drawText(x + rect_w * 3 + 6, yy + 6, "SD");
-
-  if (!mini_acid_.isHatMuted()) {
-    gfx_.fillRect(x + rect_w * 4 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_MUTE_BACKGROUND);
-  }
-  gfx_.drawRect(x + rect_w * 4 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_WHITE);
-  gfx_.drawText(x + rect_w * 4 + 6, yy + 6, "CH");
-
-  if (!mini_acid_.isOpenHatMuted()) {
-    gfx_.fillRect(x + rect_w * 5 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_MUTE_BACKGROUND);
-  }
-  gfx_.drawRect(x + rect_w * 5 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_WHITE);
-  gfx_.drawText(x + rect_w * 5 + 6, yy + 6, "OH");
-
-  if (!mini_acid_.isMidTomMuted()) {
-    gfx_.fillRect(x + rect_w * 6 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_MUTE_BACKGROUND);
-  }
-  gfx_.drawRect(x + rect_w * 6 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_WHITE);
-  gfx_.drawText(x + rect_w * 6 + 6, yy + 6, "MT");
-
-  if (!mini_acid_.isHighTomMuted()) {
-    gfx_.fillRect(x + rect_w * 7 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_MUTE_BACKGROUND);
-  }
-  gfx_.drawRect(x + rect_w * 7 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_WHITE);
-  gfx_.drawText(x + rect_w * 7 + 6, yy + 6, "HT");
-
-  if (!mini_acid_.isRimMuted()) {
-    gfx_.fillRect(x + rect_w * 8 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_MUTE_BACKGROUND);
-  }
-  gfx_.drawRect(x + rect_w * 8 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_WHITE);
-  gfx_.drawText(x + rect_w * 8 + 6, yy + 6, "RS");
-
-  if (!mini_acid_.isClapMuted()) {
-    gfx_.fillRect(x + rect_w * 9 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_MUTE_BACKGROUND);
-  }
-  gfx_.drawRect(x + rect_w * 9 + 1, y + 1, rect_w - 2 - 1, h - 2, COLOR_WHITE);
-  gfx_.drawText(x + rect_w * 9 + 6, yy + 6, "CP");
+  mute_buttons_container_.draw(gfx_);
 }
 
 int MiniAcidDisplay::drawPageTitle(int x, int y, int w, const char* text) {
@@ -390,6 +363,11 @@ bool MiniAcidDisplay::handleEvent(UIEvent event) {
       default:
         break;
     }
+  }
+
+  // Handle mute button clicks
+  if (mute_buttons_initialized_ && mute_buttons_container_.handleEvent(event)) {
+    return true;
   }
 
   if (help_dialog_visible_) {
