@@ -1,9 +1,20 @@
 #include "pattern_edit_page.h"
 
 #include <cctype>
-#include <cstdio>
+#include <utility>
 
-#include "../help_dialog.h"
+#include "../help_dialog_frames.h"
+#include "../components/bank_selection_bar.h"
+#include "../components/pattern_selection_bar.h"
+
+namespace {
+struct PatternClipboard {
+  bool has_pattern = false;
+  SynthPattern pattern{};
+};
+
+PatternClipboard g_pattern_clipboard;
+} // namespace
 
 PatternEditPage::PatternEditPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_guard, int voice_index)
   : gfx_(gfx),
@@ -12,11 +23,33 @@ PatternEditPage::PatternEditPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& aud
     voice_index_(voice_index),
     pattern_edit_cursor_(0),
     pattern_row_cursor_(0),
+    bank_index_(0),
+    bank_cursor_(0),
     focus_(Focus::Steps) {
   int idx = mini_acid_.current303PatternIndex(voice_index_);
   if (idx < 0 || idx >= Bank<SynthPattern>::kPatterns) idx = 0;
   pattern_row_cursor_ = idx;
+  bank_index_ = mini_acid_.current303BankIndex(voice_index_);
+  bank_cursor_ = bank_index_;
   title_ = voice_index_ == 0 ? "303A PATTERNS" : "303B PATTERNS";
+  pattern_bar_ = std::make_shared<PatternSelectionBarComponent>("PATTERNS");
+  bank_bar_ = std::make_shared<BankSelectionBarComponent>("BANK", "ABCD");
+  PatternSelectionBarComponent::Callbacks pattern_callbacks;
+  pattern_callbacks.onSelect = [this](int index) {
+    if (mini_acid_.songModeEnabled()) return;
+    focusPatternRow();
+    setPatternCursor(index);
+    withAudioGuard([&]() { mini_acid_.set303PatternIndex(voice_index_, index); });
+  };
+  pattern_bar_->setCallbacks(std::move(pattern_callbacks));
+  BankSelectionBarComponent::Callbacks bank_callbacks;
+  bank_callbacks.onSelect = [this](int index) {
+    if (mini_acid_.songModeEnabled()) return;
+    focus_ = Focus::BankRow;
+    bank_cursor_ = index;
+    setBankIndex(index);
+  };
+  bank_bar_->setCallbacks(std::move(bank_callbacks));
 }
 
 int PatternEditPage::clampCursor(int cursorIndex) const {
@@ -24,6 +57,13 @@ int PatternEditPage::clampCursor(int cursorIndex) const {
   if (cursor < 0) cursor = 0;
   if (cursor >= Bank<SynthPattern>::kPatterns)
     cursor = Bank<SynthPattern>::kPatterns - 1;
+  return cursor;
+}
+
+int PatternEditPage::activeBankCursor() const {
+  int cursor = bank_cursor_;
+  if (cursor < 0) cursor = 0;
+  if (cursor >= kBankCount) cursor = kBankCount - 1;
   return cursor;
 }
 
@@ -41,8 +81,26 @@ int PatternEditPage::patternIndexFromKey(char key) const {
   }
 }
 
+int PatternEditPage::bankIndexFromKey(char key) const {
+  switch (key) {
+    case '1': return 0;
+    case '2': return 1;
+    case '3': return 2;
+    case '4': return 3;
+    default: return -1;
+  }
+}
+
+void PatternEditPage::setBankIndex(int bankIndex) {
+  if (bankIndex < 0) bankIndex = 0;
+  if (bankIndex >= kBankCount) bankIndex = kBankCount - 1;
+  if (bank_index_ == bankIndex) return;
+  bank_index_ = bankIndex;
+  withAudioGuard([&]() { mini_acid_.set303BankIndex(voice_index_, bank_index_); });
+}
+
 void PatternEditPage::ensureStepFocus() {
-  if (patternRowFocused()) focus_ = Focus::Steps;
+  if (patternRowFocused() || focus_ == Focus::BankRow) focus_ = Focus::Steps;
 }
 
 void PatternEditPage::withAudioGuard(const std::function<void()>& fn) {
@@ -90,6 +148,13 @@ void PatternEditPage::movePatternCursor(int delta) {
   if (mini_acid_.songModeEnabled() && focus_ == Focus::PatternRow) {
     focus_ = Focus::Steps;
   }
+  if (focus_ == Focus::BankRow) {
+    int cursor = activeBankCursor();
+    cursor = (cursor + delta) % kBankCount;
+    if (cursor < 0) cursor += kBankCount;
+    bank_cursor_ = cursor;
+    return;
+  }
   if (focus_ == Focus::PatternRow) {
     int cursor = activePatternCursor();
     cursor = (cursor + delta) % Bank<SynthPattern>::kPatterns;
@@ -110,7 +175,18 @@ void PatternEditPage::movePatternCursorVertical(int delta) {
   if (mini_acid_.songModeEnabled() && focus_ == Focus::PatternRow) {
     focus_ = Focus::Steps;
   }
+  if (focus_ == Focus::BankRow) {
+    if (delta > 0) {
+      focus_ = mini_acid_.songModeEnabled() ? Focus::Steps : Focus::PatternRow;
+    }
+    return;
+  }
   if (focus_ == Focus::PatternRow) {
+    if (delta < 0 && !mini_acid_.songModeEnabled()) {
+      bank_cursor_ = bank_index_;
+      focus_ = Focus::BankRow;
+      return;
+    }
     int col = activePatternCursor();
     int targetRow = delta > 0 ? 0 : 1;
     pattern_edit_cursor_ = targetRow * 8 + col;
@@ -144,42 +220,74 @@ const std::string & PatternEditPage::getTitle() const {
   return title_;
 }
 
-void PatternEditPage::drawHelpBody(IGfx& gfx, int x, int y, int w, int h) {
-  if (w <= 0 || h <= 0) return;
-  switch (help_page_index_) {
-    case 0:
-      drawHelpPage303PatternEdit(gfx, x, y, w, h);
-      break;
-    default:
-      break;
-  }
-  drawHelpScrollbar(gfx, x, y, w, h, help_page_index_, total_help_pages_);
-}
-
-bool PatternEditPage::handleHelpEvent(UIEvent& ui_event) {
-  if (ui_event.event_type != MINIACID_KEY_DOWN) return false;
-  int next = help_page_index_;
-  switch (ui_event.scancode) {
-    case MINIACID_UP:
-      next -= 1;
-      break;
-    case MINIACID_DOWN:
-      next += 1;
-      break;
-    default:
-      return false;
-  }
-  if (next < 0) next = 0;
-  if (next >= total_help_pages_) next = total_help_pages_ - 1;
-  help_page_index_ = next;
-  return true;
-}
-
-bool PatternEditPage::hasHelpDialog() {
-  return true;
-}
-
 bool PatternEditPage::handleEvent(UIEvent& ui_event) {
+  if (pattern_bar_ && pattern_bar_->handleEvent(ui_event)) return true;
+  if (bank_bar_ && bank_bar_->handleEvent(ui_event)) return true;
+  if (ui_event.event_type == MINIACID_APPLICATION_EVENT) {
+    switch (ui_event.app_event_type) {
+      case MINIACID_APP_EVENT_COPY: {
+        const int8_t* notes = mini_acid_.pattern303Steps(voice_index_);
+        const bool* accent = mini_acid_.pattern303AccentSteps(voice_index_);
+        const bool* slide = mini_acid_.pattern303SlideSteps(voice_index_);
+        for (int i = 0; i < SEQ_STEPS; ++i) {
+          g_pattern_clipboard.pattern.steps[i].note = notes[i];
+          g_pattern_clipboard.pattern.steps[i].accent = accent[i];
+          g_pattern_clipboard.pattern.steps[i].slide = slide[i];
+        }
+        g_pattern_clipboard.has_pattern = true;
+        return true;
+      }
+      case MINIACID_APP_EVENT_PASTE: {
+        if (!g_pattern_clipboard.has_pattern) return false;
+        int current_notes[SEQ_STEPS];
+        bool current_accent[SEQ_STEPS];
+        bool current_slide[SEQ_STEPS];
+        const int8_t* notes = mini_acid_.pattern303Steps(voice_index_);
+        const bool* accent = mini_acid_.pattern303AccentSteps(voice_index_);
+        const bool* slide = mini_acid_.pattern303SlideSteps(voice_index_);
+        for (int i = 0; i < SEQ_STEPS; ++i) {
+          current_notes[i] = notes[i];
+          current_accent[i] = accent[i];
+          current_slide[i] = slide[i];
+        }
+        const SynthPattern& src = g_pattern_clipboard.pattern;
+        withAudioGuard([&]() {
+          for (int i = 0; i < SEQ_STEPS; ++i) {
+            int target_note = src.steps[i].note;
+            int current_note = current_notes[i];
+            if (target_note < 0) {
+              if (current_note >= 0) {
+                mini_acid_.clear303StepNote(voice_index_, i);
+              }
+            } else if (current_note < 0) {
+              int delta = target_note - MiniAcid::kMin303Note;
+              if (delta == 0) {
+                mini_acid_.adjust303StepNote(voice_index_, i, 1);
+                mini_acid_.adjust303StepNote(voice_index_, i, -1);
+              } else {
+                mini_acid_.adjust303StepNote(voice_index_, i, delta);
+              }
+            } else {
+              int delta = target_note - current_note;
+              if (delta != 0) {
+                mini_acid_.adjust303StepNote(voice_index_, i, delta);
+              }
+            }
+
+            if (current_accent[i] != src.steps[i].accent) {
+              mini_acid_.toggle303AccentStep(voice_index_, i);
+            }
+            if (current_slide[i] != src.steps[i].slide) {
+              mini_acid_.toggle303SlideStep(voice_index_, i);
+            }
+          }
+        });
+        return true;
+      }
+      default:
+        return false;
+    }
+  }
   if (ui_event.event_type != MINIACID_KEY_DOWN) return false;
   bool handled = false;
   switch (ui_event.scancode) {
@@ -207,12 +315,28 @@ bool PatternEditPage::handleEvent(UIEvent& ui_event) {
   char key = ui_event.key;
   if (!key) return false;
 
-  if ((key == '\n' || key == '\r') && patternRowFocused()) {
-    if (mini_acid_.songModeEnabled()) return true;
-    int cursor = activePatternCursor();
-    setPatternCursor(cursor);
-    withAudioGuard([&]() { mini_acid_.set303PatternIndex(voice_index_, cursor); });
+  /*
+  int bankIdx = bankIndexFromKey(key);
+  if (bankIdx >= 0) {
+    setBankIndex(bankIdx);
+    if (!mini_acid_.songModeEnabled()) focus_ = Focus::BankRow;
     return true;
+  }
+    */
+
+  if (key == '\n' || key == '\r') {
+    if (focus_ == Focus::BankRow) {
+      if (mini_acid_.songModeEnabled()) return true;
+      setBankIndex(activeBankCursor());
+      return true;
+    }
+    if (patternRowFocused()) {
+      if (mini_acid_.songModeEnabled()) return true;
+      int cursor = activePatternCursor();
+      setPatternCursor(cursor);
+      withAudioGuard([&]() { mini_acid_.set303PatternIndex(voice_index_, cursor); });
+      return true;
+    }
   }
 
   int patternIdx = patternIndexFromKey(key);
@@ -289,7 +413,32 @@ bool PatternEditPage::handleEvent(UIEvent& ui_event) {
   return false;
 }
 
-void PatternEditPage::draw(IGfx& gfx, int x, int y, int w, int h) {
+std::unique_ptr<MultiPageHelpDialog> PatternEditPage::getHelpDialog() {
+  return std::make_unique<MultiPageHelpDialog>(*this);
+}
+
+int PatternEditPage::getHelpFrameCount() const {
+  return 1;
+}
+
+void PatternEditPage::drawHelpFrame(IGfx& gfx, int frameIndex, Rect bounds) const {
+  if (bounds.w <= 0 || bounds.h <= 0) return;
+  switch (frameIndex) {
+    case 0:
+      drawHelpPage303PatternEdit(gfx, bounds.x, bounds.y, bounds.w, bounds.h);
+      break;
+    default:
+      break;
+  }
+}
+
+void PatternEditPage::draw(IGfx& gfx) {
+  bank_index_ = mini_acid_.current303BankIndex(voice_index_);
+  const Rect& bounds = getBoundaries();
+  int x = bounds.x;
+  int y = bounds.y;
+  int w = bounds.w;
+  int h = bounds.h;
 
   int body_y = y + 2;
   int body_h = h - 2;
@@ -303,47 +452,37 @@ void PatternEditPage::draw(IGfx& gfx, int x, int y, int w, int h) {
   int selectedPattern = mini_acid_.display303PatternIndex(voice_index_);
   bool songMode = mini_acid_.songModeEnabled();
   bool patternFocus = !songMode && patternRowFocused();
-  bool stepFocus = !patternFocus;
+  bool bankFocus = !songMode && focus_ == Focus::BankRow;
+  bool stepFocus = !patternFocus && !bankFocus;
   int patternCursor = songMode && selectedPattern >= 0 ? selectedPattern : activePatternCursor();
+  int bankCursor = activeBankCursor();
+
+  PatternSelectionBarComponent::State pattern_state;
+  pattern_state.pattern_count = Bank<SynthPattern>::kPatterns;
+  pattern_state.selected_index = selectedPattern;
+  pattern_state.cursor_index = patternCursor;
+  pattern_state.show_cursor = patternFocus;
+  pattern_state.song_mode = songMode;
+  pattern_bar_->setState(pattern_state);
+  pattern_bar_->setBoundaries(Rect{x, body_y, w, 0});
+  int pattern_bar_h = pattern_bar_->barHeight(gfx);
+  pattern_bar_->setBoundaries(Rect{x, body_y, w, pattern_bar_h});
+  pattern_bar_->draw(gfx);
+
+  BankSelectionBarComponent::State bank_state;
+  bank_state.bank_count = kBankCount;
+  bank_state.selected_index = bank_index_;
+  bank_state.cursor_index = bankCursor;
+  bank_state.show_cursor = bankFocus;
+  bank_state.song_mode = songMode;
+  bank_bar_->setState(bank_state);
+  bank_bar_->setBoundaries(Rect{x, body_y - 1, w, 0});
+  int bank_bar_h = bank_bar_->barHeight(gfx);
+  bank_bar_->setBoundaries(Rect{x, body_y - 1, w, bank_bar_h});
+  bank_bar_->draw(gfx);
 
   int spacing = 4;
-  int pattern_size = (w - spacing * 7 - 2) / 8;
-  int pattern_size_height = pattern_size / 2;
-  if (pattern_size < 12) pattern_size = 12;
-  int pattern_label_h = gfx.fontHeight();
-  int pattern_row_y = body_y + pattern_label_h + 1;
-
-  gfx.setTextColor(COLOR_LABEL);
-  gfx.drawText(x, body_y, "PATTERNS");
-  gfx.setTextColor(COLOR_WHITE);
-
-  for (int i = 0; i < Bank<SynthPattern>::kPatterns; ++i) {
-    int col = i % 8;
-    int cell_x = x + col * (pattern_size + spacing);
-    bool isCursor = patternFocus && patternCursor == i;
-    IGfxColor bg = songMode ? COLOR_GRAY_DARKER : COLOR_PANEL;
-    gfx.fillRect(cell_x, pattern_row_y, pattern_size, pattern_size_height, bg);
-    if (selectedPattern == i) {
-      IGfxColor sel = songMode ? IGfxColor::Yellow() : COLOR_PATTERN_SELECTED_FILL;
-      IGfxColor border = songMode ? IGfxColor::Yellow() : COLOR_LABEL;
-      gfx.fillRect(cell_x - 1, pattern_row_y - 1, pattern_size + 2, pattern_size_height + 2, sel);
-      gfx.drawRect(cell_x - 1, pattern_row_y - 1, pattern_size + 2, pattern_size_height + 2, border);
-    }
-    gfx.drawRect(cell_x, pattern_row_y, pattern_size, pattern_size_height, songMode ? COLOR_LABEL : COLOR_WHITE);
-    if (isCursor) {
-      gfx.drawRect(cell_x - 2, pattern_row_y - 2, pattern_size + 4, pattern_size_height + 4, COLOR_STEP_SELECTED);
-    }
-    char label[4];
-    snprintf(label, sizeof(label), "%d", i + 1);
-    int tw = textWidth(gfx, label);
-    int tx = cell_x + (pattern_size - tw) / 2;
-    int ty = pattern_row_y + pattern_size_height / 2 - gfx.fontHeight() / 2;
-    gfx.setTextColor(songMode ? COLOR_LABEL : COLOR_WHITE);
-    gfx.drawText(tx, ty, label);
-    gfx.setTextColor(COLOR_WHITE);
-  }
-
-  int grid_top = pattern_row_y + pattern_size_height + 6;
+  int grid_top = body_y + pattern_bar_h + 6;
   int cell_size = (w - spacing * 7 - 2) / 8;
   if (cell_size < 12) cell_size = 12;
   int indicator_h = 5;

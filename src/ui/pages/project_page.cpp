@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 
-#include "../help_dialog.h"
+#include "../help_dialog_frames.h"
 
 namespace {
 std::string generateMemorableName() {
@@ -316,24 +316,13 @@ const std::string & ProjectPage::getTitle() const {
   return title;
 }
 
-void ProjectPage::drawHelpBody(IGfx& gfx, int x, int y, int w, int h) {
-  (void)gfx;
-  (void)x;
-  (void)y;
-  (void)w;
-  (void)h;
-}
+void ProjectPage::draw(IGfx& gfx) {
+  const Rect& bounds = getBoundaries();
+  int x = bounds.x;
+  int y = bounds.y;
+  int w = bounds.w;
+  int h = bounds.h;
 
-bool ProjectPage::handleHelpEvent(UIEvent& ui_event) {
-  (void)ui_event;
-  return false;
-}
-
-bool ProjectPage::hasHelpDialog() {
-  return false;
-}
-
-void ProjectPage::draw(IGfx& gfx, int x, int y, int w, int h) {
   int body_y = y + 3;
   int body_h = h - 3;
   if (body_h <= 0) return;

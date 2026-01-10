@@ -1,18 +1,22 @@
 #pragma once
 
 #include "../ui_core.h"
+#include "../pages/help_dialog.h"
 #include "../ui_colors.h"
 #include "../ui_utils.h"
 
-class PatternEditPage : public IPage {
+class BankSelectionBarComponent;
+class PatternSelectionBarComponent;
+
+class PatternEditPage : public IPage, public IMultiHelpFramesProvider {
  public:
   PatternEditPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_guard, int voice_index);
-  void draw(IGfx& gfx, int x, int y, int w, int h) override;
-  void drawHelpBody(IGfx& gfx, int x, int y, int w, int h) override;
+  void draw(IGfx& gfx) override;
   bool handleEvent(UIEvent& ui_event) override;
-  bool handleHelpEvent(UIEvent& ui_event) override;
   const std::string & getTitle() const override;
-  bool hasHelpDialog() override;
+  std::unique_ptr<MultiPageHelpDialog> getHelpDialog() override;
+  int getHelpFrameCount() const override;
+  void drawHelpFrame(IGfx& gfx, int frameIndex, Rect bounds) const override;
 
   int activePatternCursor() const;
   int activePatternStep() const;
@@ -25,10 +29,13 @@ class PatternEditPage : public IPage {
   int voiceIndex() const { return voice_index_; }
 
  private:
-  enum class Focus { Steps = 0, PatternRow };
+  enum class Focus { Steps = 0, PatternRow, BankRow };
 
   int clampCursor(int cursorIndex) const;
+  int activeBankCursor() const;
   int patternIndexFromKey(char key) const;
+  int bankIndexFromKey(char key) const;
+  void setBankIndex(int bankIndex);
   void ensureStepFocus();
   void withAudioGuard(const std::function<void()>& fn);
 
@@ -38,8 +45,10 @@ class PatternEditPage : public IPage {
   int voice_index_;
   int pattern_edit_cursor_;
   int pattern_row_cursor_;
+  int bank_index_;
+  int bank_cursor_;
   Focus focus_;
-  int help_page_index_ = 0;
-  int total_help_pages_ = 1;
   std::string title_;
+  std::shared_ptr<PatternSelectionBarComponent> pattern_bar_;
+  std::shared_ptr<BankSelectionBarComponent> bank_bar_;
 };

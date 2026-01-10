@@ -14,7 +14,9 @@
 #include "../src/dsp/miniacid_engine.h"
 #include "scene_storage_sdl.h"
 #ifndef __EMSCRIPTEN__
-#include "wav_recorder.h"
+#include "../src/audio/desktop_audio_recorder.h"
+#else
+#include "../src/audio/wasm_audio_recorder.h"
 #endif
 
 struct AudioContext {
@@ -23,7 +25,9 @@ struct AudioContext {
   MiniAcid synth;
   SDL_AudioDeviceID device;
 #ifndef __EMSCRIPTEN__
-  WavRecorder recorder;
+  DesktopAudioRecorder recorder;
+#else
+  WasmAudioRecorder recorder;
 #endif
 };
 
@@ -46,37 +50,89 @@ static void audioCallback(void *userdata, Uint8 *stream, int len) {
 
   // Fill the output buffer using the synth
   ctx->synth.generateAudioBuffer(out, frames);
-#ifndef __EMSCRIPTEN__
   ctx->recorder.writeSamples(out, frames);
-#endif
 }
 
 static void handleEvents(AppState& s) {
   SDL_Event e;
+  auto scaleMouse = [&](int value) {
+    if (!s.sdl) return value;
+    int scale = s.sdl->windowScale();
+    if (scale <= 0) return value;
+    return value / scale;
+  };
   while (SDL_PollEvent(&e)) {
     if (e.type == SDL_QUIT) {
       s.running = false;
+    } else if (e.type == SDL_MOUSEMOTION) {
+      UIEvent miniacidEvent{};
+      miniacidEvent.event_type = e.motion.state != 0 ? MINIACID_MOUSE_DRAG : MINIACID_MOUSE_MOVE;
+      miniacidEvent.alt = (SDL_GetModState() & KMOD_ALT) != 0;
+      miniacidEvent.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+      miniacidEvent.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+      miniacidEvent.meta = (SDL_GetModState() & KMOD_GUI) != 0;
+      miniacidEvent.x = scaleMouse(e.motion.x);
+      miniacidEvent.y = scaleMouse(e.motion.y);
+      miniacidEvent.dx = scaleMouse(e.motion.xrel);
+      miniacidEvent.dy = scaleMouse(e.motion.yrel);
+      if ((e.motion.state & SDL_BUTTON_LMASK) != 0) {
+        miniacidEvent.button = MOUSE_BUTTON_LEFT;
+      } else if ((e.motion.state & SDL_BUTTON_RMASK) != 0) {
+        miniacidEvent.button = MOUSE_BUTTON_RIGHT;
+      } else if ((e.motion.state & SDL_BUTTON_MMASK) != 0) {
+        miniacidEvent.button = MOUSE_BUTTON_MIDDLE;
+      }
+      if (s.ui) s.ui->handleEvent(miniacidEvent);
+    } else if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP) {
+      UIEvent miniacidEvent{};
+      miniacidEvent.event_type = e.type == SDL_MOUSEBUTTONDOWN ? MINIACID_MOUSE_DOWN : MINIACID_MOUSE_UP;
+      miniacidEvent.alt = (SDL_GetModState() & KMOD_ALT) != 0;
+      miniacidEvent.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+      miniacidEvent.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+      miniacidEvent.meta = (SDL_GetModState() & KMOD_GUI) != 0;
+      miniacidEvent.x = scaleMouse(e.button.x);
+      miniacidEvent.y = scaleMouse(e.button.y);
+      switch (e.button.button) {
+        case SDL_BUTTON_LEFT:
+          miniacidEvent.button = MOUSE_BUTTON_LEFT;
+          break;
+        case SDL_BUTTON_MIDDLE:
+          miniacidEvent.button = MOUSE_BUTTON_MIDDLE;
+          break;
+        case SDL_BUTTON_RIGHT:
+          miniacidEvent.button = MOUSE_BUTTON_RIGHT;
+          break;
+        default:
+          miniacidEvent.button = MOUSE_BUTTON_NONE;
+          break;
+      }
+      if (s.ui) s.ui->handleEvent(miniacidEvent);
+    } else if (e.type == SDL_MOUSEWHEEL) {
+      UIEvent miniacidEvent{};
+      miniacidEvent.event_type = MINIACID_MOUSE_SCROLL;
+      miniacidEvent.alt = (SDL_GetModState() & KMOD_ALT) != 0;
+      miniacidEvent.ctrl = (SDL_GetModState() & KMOD_CTRL) != 0;
+      miniacidEvent.shift = (SDL_GetModState() & KMOD_SHIFT) != 0;
+      miniacidEvent.meta = (SDL_GetModState() & KMOD_GUI) != 0;
+      SDL_GetMouseState(&miniacidEvent.x, &miniacidEvent.y);
+      miniacidEvent.x = scaleMouse(miniacidEvent.x);
+      miniacidEvent.y = scaleMouse(miniacidEvent.y);
+      miniacidEvent.wheel_dx = e.wheel.x;
+      miniacidEvent.wheel_dy = e.wheel.y;
+      if (e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
+        miniacidEvent.wheel_dx = -miniacidEvent.wheel_dx;
+        miniacidEvent.wheel_dy = -miniacidEvent.wheel_dy;
+      }
+      if (s.ui) s.ui->handleEvent(miniacidEvent);
     } else if (e.type == SDL_KEYDOWN) {
       if (s.ui) s.ui->dismissSplash();
       SDL_Scancode sc = e.key.keysym.scancode;
-#ifndef __EMSCRIPTEN__
-      if (sc == SDL_SCANCODE_R && (e.key.keysym.mod & KMOD_CTRL) != 0 && s.sdl && e.key.repeat == 0) {
-        SDL_LockAudioDevice(s.audio.device);
-        if (s.audio.recorder.isRecording()) {
-          s.audio.recorder.stop();
-          printf("WAV Recording stopped: %s\n", s.audio.recorder.filename().c_str());
-        } else if (s.audio.recorder.start(SAMPLE_RATE, 1)) {
-          printf("WAV Recording started: %s\n", s.audio.recorder.filename().c_str());
-        } else {
-          fprintf(stderr, "Failed to start WAV recording\n");
-        }
-        SDL_UnlockAudioDevice(s.audio.device);
-        continue;
-      }
-#endif
       UIEvent miniacidEvent{};
       miniacidEvent.event_type = MINIACID_KEY_DOWN;
       miniacidEvent.alt = (e.key.keysym.mod & KMOD_ALT) != 0;
+      miniacidEvent.ctrl = (e.key.keysym.mod & KMOD_CTRL) != 0;
+      miniacidEvent.shift = (e.key.keysym.mod & KMOD_SHIFT) != 0;
+      miniacidEvent.meta = (e.key.keysym.mod & KMOD_GUI) != 0;
       switch(sc) {
         case SDL_SCANCODE_DOWN:
           miniacidEvent.scancode = MINIACID_DOWN;
@@ -214,15 +270,20 @@ static void updateUI(AppState& s) {
 
 static void cleanup(AppState& s) {
   if (s.cleaned_up) return;
-#ifndef __EMSCRIPTEN__
   if (s.audio.recorder.isRecording()) {
     SDL_LockAudioDevice(s.audio.device);
     s.audio.recorder.stop();
     SDL_UnlockAudioDevice(s.audio.device);
     printf("WAV Recording stopped: %s\n", s.audio.recorder.filename().c_str());
   }
-#endif
   SDL_CloseAudioDevice(s.audio.device);
+  delete s.ui;
+  s.ui = nullptr;
+  delete s.sdl;
+  s.sdl = nullptr;
+  delete s.card;
+  s.card = nullptr;
+  s.gfx = nullptr;
   SDL_Quit();
   s.cleaned_up = true;
 }
@@ -294,6 +355,7 @@ int main(int argc, char **argv) {
     fn();
     SDL_UnlockAudioDevice(state.audio.device);
   });
+  state.ui->setAudioRecorder(&state.audio.recorder);
 
 #ifdef __EMSCRIPTEN__
   emscripten_set_main_loop_arg(mainLoopTick, &state, 0, 1);

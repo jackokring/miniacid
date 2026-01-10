@@ -9,12 +9,9 @@
 class WaveformPage : public IPage {
  public:
   WaveformPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_guard);
-  void draw(IGfx& gfx, int x, int y, int w, int h) override;
-  void drawHelpBody(IGfx& gfx, int x, int y, int w, int h) override;
+  void draw(IGfx& gfx) override;
   bool handleEvent(UIEvent& ui_event) override;
-  bool handleHelpEvent(UIEvent& ui_event) override;
   const std::string & getTitle() const override;
-  bool hasHelpDialog() override;
 
  private:
   IGfx& gfx_;

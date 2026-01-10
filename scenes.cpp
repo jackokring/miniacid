@@ -1,6 +1,8 @@
 #include "ArduinoJson-v7.4.2.h"
 #include "scenes.h"
 
+#include <memory>
+
 namespace {
 int clampIndex(int value, int maxExclusive) {
   if (value < 0) return 0;
@@ -33,14 +35,16 @@ void clearSong(Song& song) {
 }
 
 void clearSceneData(Scene& scene) {
-  for (int p = 0; p < Bank<DrumPatternSet>::kPatterns; ++p) {
-    for (int v = 0; v < DrumPatternSet::kVoices; ++v) {
-      clearDrumPattern(scene.drumBank.patterns[p].voices[v]);
+  for (int b = 0; b < kBankCount; ++b) {
+    for (int p = 0; p < Bank<DrumPatternSet>::kPatterns; ++p) {
+      for (int v = 0; v < DrumPatternSet::kVoices; ++v) {
+        clearDrumPattern(scene.drumBanks[b].patterns[p].voices[v]);
+      }
     }
-  }
-  for (int p = 0; p < Bank<SynthPattern>::kPatterns; ++p) {
-    clearSynthPattern(scene.synthABank.patterns[p]);
-    clearSynthPattern(scene.synthBBank.patterns[p]);
+    for (int p = 0; p < Bank<SynthPattern>::kPatterns; ++p) {
+      clearSynthPattern(scene.synthABanks[b].patterns[p]);
+      clearSynthPattern(scene.synthBBanks[b].patterns[p]);
+    }
   }
   clearSong(scene.song);
 }
@@ -64,6 +68,13 @@ void serializeDrumBank(const Bank<DrumPatternSet>& bank, ArduinoJson::JsonArray 
   }
 }
 
+void serializeDrumBanks(const Bank<DrumPatternSet>* banks, ArduinoJson::JsonArray banksArr) {
+  for (int b = 0; b < kBankCount; ++b) {
+    ArduinoJson::JsonArray patterns = banksArr.add<ArduinoJson::JsonArray>();
+    serializeDrumBank(banks[b], patterns);
+  }
+}
+
 void serializeSynthPattern(const SynthPattern& pattern, ArduinoJson::JsonArray steps) {
   for (int i = 0; i < SynthPattern::kSteps; ++i) {
     ArduinoJson::JsonObject step = steps.add<ArduinoJson::JsonObject>();
@@ -77,6 +88,13 @@ void serializeSynthBank(const Bank<SynthPattern>& bank, ArduinoJson::JsonArray p
   for (int p = 0; p < Bank<SynthPattern>::kPatterns; ++p) {
     ArduinoJson::JsonArray steps = patterns.add<ArduinoJson::JsonArray>();
     serializeSynthPattern(bank.patterns[p], steps);
+  }
+}
+
+void serializeSynthBanks(const Bank<SynthPattern>* banks, ArduinoJson::JsonArray banksArr) {
+  for (int b = 0; b < kBankCount; ++b) {
+    ArduinoJson::JsonArray patterns = banksArr.add<ArduinoJson::JsonArray>();
+    serializeSynthBank(banks[b], patterns);
   }
 }
 
@@ -129,6 +147,21 @@ bool deserializeDrumBank(ArduinoJson::JsonVariantConst value, Bank<DrumPatternSe
   return true;
 }
 
+bool deserializeDrumBanks(ArduinoJson::JsonVariantConst value, Bank<DrumPatternSet>* banks) {
+  ArduinoJson::JsonArrayConst banksArr = value.as<ArduinoJson::JsonArrayConst>();
+  if (banksArr.isNull()) return false;
+  if (static_cast<int>(banksArr.size()) == Bank<DrumPatternSet>::kPatterns) {
+    return deserializeDrumBank(value, banks[0]);
+  }
+  if (static_cast<int>(banksArr.size()) != kBankCount) return false;
+  int b = 0;
+  for (ArduinoJson::JsonVariantConst bankVal : banksArr) {
+    if (!deserializeDrumBank(bankVal, banks[b])) return false;
+    ++b;
+  }
+  return true;
+}
+
 bool deserializeSynthPattern(ArduinoJson::JsonVariantConst value, SynthPattern& pattern) {
   ArduinoJson::JsonArrayConst steps = value.as<ArduinoJson::JsonArrayConst>();
   if (steps.isNull() || static_cast<int>(steps.size()) != SynthPattern::kSteps) return false;
@@ -159,6 +192,20 @@ bool deserializeSynthBank(ArduinoJson::JsonVariantConst value, Bank<SynthPattern
   return true;
 }
 
+bool deserializeSynthBanks(ArduinoJson::JsonVariantConst value, Bank<SynthPattern>* banks) {
+  ArduinoJson::JsonArrayConst banksArr = value.as<ArduinoJson::JsonArrayConst>();
+  if (banksArr.isNull()) return false;
+  if (static_cast<int>(banksArr.size()) == Bank<SynthPattern>::kPatterns) {
+    return deserializeSynthBank(value, banks[0]);
+  }
+  if (static_cast<int>(banksArr.size()) != kBankCount) return false;
+  int b = 0;
+  for (ArduinoJson::JsonVariantConst bankVal : banksArr) {
+    if (!deserializeSynthBank(bankVal, banks[b])) return false;
+    ++b;
+  }
+  return true;
+}
 int valueToInt(ArduinoJson::JsonVariantConst value, int defaultValue) {
   if (value.is<int>()) {
     return value.as<int>();
@@ -215,14 +262,24 @@ SceneJsonObserver::SceneJsonObserver(Scene& scene, float defaultBpm)
 
 SceneJsonObserver::Path SceneJsonObserver::deduceArrayPath(const Context& parent) const {
   switch (parent.path) {
+  case Path::DrumBanks:
+    return Path::DrumBank;
   case Path::DrumBank:
     return Path::DrumPatternSet;
+  case Path::SynthABanks:
+    return Path::SynthABank;
   case Path::SynthABank:
     return Path::SynthPattern;
+  case Path::SynthBBanks:
+    return Path::SynthBBank;
   case Path::SynthBBank:
     return Path::SynthPattern;
   case Path::SynthParams:
     return Path::SynthParam;
+  case Path::SynthDistortion:
+    return Path::SynthDistortion;
+  case Path::SynthDelay:
+    return Path::SynthDelay;
   case Path::Song:
     return Path::SongPosition;
   default:
@@ -256,16 +313,16 @@ int SceneJsonObserver::currentIndexFor(Path path) const {
 
 bool SceneJsonObserver::inSynthBankA() const {
   for (int i = stackSize_ - 1; i >= 0; --i) {
-    if (stack_[i].path == Path::SynthABank) return true;
-    if (stack_[i].path == Path::SynthBBank) return false;
+    if (stack_[i].path == Path::SynthABanks || stack_[i].path == Path::SynthABank) return true;
+    if (stack_[i].path == Path::SynthBBanks || stack_[i].path == Path::SynthBBank) return false;
   }
   return true;
 }
 
 bool SceneJsonObserver::inSynthBankB() const {
   for (int i = stackSize_ - 1; i >= 0; --i) {
-    if (stack_[i].path == Path::SynthBBank) return true;
-    if (stack_[i].path == Path::SynthABank) return false;
+    if (stack_[i].path == Path::SynthBBanks || stack_[i].path == Path::SynthBBank) return true;
+    if (stack_[i].path == Path::SynthABanks || stack_[i].path == Path::SynthABank) return false;
   }
   return false;
 }
@@ -319,17 +376,24 @@ void SceneJsonObserver::onArrayStart() {
     const Context& parent = stack_[stackSize_ - 1];
     if (parent.type == Context::Type::Object) {
       if (parent.path == Path::Root) {
-        if (lastKey_ == "drumBank") path = Path::DrumBank;
+        if (lastKey_ == "drumBanks") path = Path::DrumBanks;
+        else if (lastKey_ == "drumBank") path = Path::DrumBank;
+        else if (lastKey_ == "synthABanks") path = Path::SynthABanks;
         else if (lastKey_ == "synthABank") path = Path::SynthABank;
+        else if (lastKey_ == "synthBBanks") path = Path::SynthBBanks;
         else if (lastKey_ == "synthBBank") path = Path::SynthBBank;
       } else if (parent.path == Path::Song) {
         if (lastKey_ == "positions") path = Path::SongPositions;
+        else if (lastKey_ == "synthDistortion") path = Path::SynthDistortion;
+        else if (lastKey_ == "synthDelay") path = Path::SynthDelay;
       } else if (parent.path == Path::DrumVoice) {
         if (lastKey_ == "hit") path = Path::DrumHitArray;
         else if (lastKey_ == "accent") path = Path::DrumAccentArray;
       } else if (parent.path == Path::State) {
         if (lastKey_ == "synthPatternIndex") path = Path::SynthPatternIndex;
         else if (lastKey_ == "synthBankIndex") path = Path::SynthBankIndex;
+        else if (lastKey_ == "synthDistortion") path = Path::SynthDistortion;
+        else if (lastKey_ == "synthDelay") path = Path::SynthDelay;
         else if (lastKey_ == "synthParams") path = Path::SynthParams;
       } else if (parent.path == Path::Mute) {
         if (lastKey_ == "drums") path = Path::MuteDrums;
@@ -373,14 +437,15 @@ void SceneJsonObserver::handlePrimitiveNumber(double value, bool isInteger) {
     else if (lastKey_ == "b") trackIdx = 1;
     else if (lastKey_ == "drums") trackIdx = 2;
     if (trackIdx >= 0 && trackIdx < SongPosition::kTrackCount) {
-      song_.positions[posIdx].patterns[trackIdx] = static_cast<int>(value);
+      song_.positions[posIdx].patterns[trackIdx] = clampSongPatternIndex(static_cast<int>(value));
       if (posIdx + 1 > song_.length) song_.length = posIdx + 1;
       hasSong_ = true;
     }
     return;
   }
   if (path == Path::DrumHitArray || path == Path::DrumAccentArray ||
-      path == Path::MuteDrums || path == Path::MuteSynth) {
+      path == Path::MuteDrums || path == Path::MuteSynth || path == Path::SynthDistortion ||
+      path == Path::SynthDelay) {
     handlePrimitiveBool(value != 0);
     return;
   }
@@ -397,14 +462,17 @@ void SceneJsonObserver::handlePrimitiveNumber(double value, bool isInteger) {
   if (path == Path::SynthStep) {
     int stepIdx = currentIndexFor(Path::SynthPattern);
     bool useBankB = inSynthBankB();
+    int bankIdx = currentIndexFor(useBankB ? Path::SynthBBanks : Path::SynthABanks);
+    if (bankIdx < 0) bankIdx = 0;
     int patternIdx = currentIndexFor(useBankB ? Path::SynthBBank : Path::SynthABank);
     if (stepIdx < 0 || stepIdx >= SynthPattern::kSteps ||
-        patternIdx < 0 || patternIdx >= Bank<SynthPattern>::kPatterns) {
+        patternIdx < 0 || patternIdx >= Bank<SynthPattern>::kPatterns ||
+        bankIdx < 0 || bankIdx >= kBankCount) {
       error_ = true;
       return;
     }
-    SynthPattern& pattern = useBankB ? target_.synthBBank.patterns[patternIdx]
-                                     : target_.synthABank.patterns[patternIdx];
+    SynthPattern& pattern = useBankB ? target_.synthBBanks[bankIdx].patterns[patternIdx]
+                                     : target_.synthABanks[bankIdx].patterns[patternIdx];
     if (lastKey_ == "note") {
       pattern.steps[stepIdx].note = static_cast<int>(value);
     } else if (lastKey_ == "slide") {
@@ -464,16 +532,19 @@ void SceneJsonObserver::handlePrimitiveBool(bool value) {
   if (error_ || stackSize_ == 0) return;
   Path path = stack_[stackSize_ - 1].path;
   if (path == Path::DrumHitArray || path == Path::DrumAccentArray) {
+    int bankIdx = currentIndexFor(Path::DrumBanks);
+    if (bankIdx < 0) bankIdx = 0;
     int patternIdx = currentIndexFor(Path::DrumBank);
     int voiceIdx = currentIndexFor(Path::DrumPatternSet);
     int stepIdx = stack_[stackSize_ - 1].index;
     if (patternIdx < 0 || patternIdx >= Bank<DrumPatternSet>::kPatterns ||
         voiceIdx < 0 || voiceIdx >= DrumPatternSet::kVoices ||
-        stepIdx < 0 || stepIdx >= DrumPattern::kSteps) {
+        stepIdx < 0 || stepIdx >= DrumPattern::kSteps ||
+        bankIdx < 0 || bankIdx >= kBankCount) {
       error_ = true;
       return;
     }
-    DrumStep& step = target_.drumBank.patterns[patternIdx].voices[voiceIdx].steps[stepIdx];
+    DrumStep& step = target_.drumBanks[bankIdx].patterns[patternIdx].voices[voiceIdx].steps[stepIdx];
     if (path == Path::DrumHitArray) {
       step.hit = value;
     } else {
@@ -501,18 +572,39 @@ void SceneJsonObserver::handlePrimitiveBool(bool value) {
     synthMute_[muteIdx] = value;
     return;
   }
+  if (path == Path::SynthDistortion) {
+    int idx = stack_[stackSize_ - 1].index;
+    if (idx < 0 || idx >= 2) {
+      error_ = true;
+      return;
+    }
+    synthDistortion_[idx] = value;
+    return;
+  }
+  if (path == Path::SynthDelay) {
+    int idx = stack_[stackSize_ - 1].index;
+    if (idx < 0 || idx >= 2) {
+      error_ = true;
+      return;
+    }
+    synthDelay_[idx] = value;
+    return;
+  }
 
   if (path == Path::SynthStep) {
     int stepIdx = currentIndexFor(Path::SynthPattern);
     bool useBankB = inSynthBankB();
+    int bankIdx = currentIndexFor(useBankB ? Path::SynthBBanks : Path::SynthABanks);
+    if (bankIdx < 0) bankIdx = 0;
     int patternIdx = currentIndexFor(useBankB ? Path::SynthBBank : Path::SynthABank);
     if (patternIdx < 0 || patternIdx >= Bank<SynthPattern>::kPatterns ||
-        stepIdx < 0 || stepIdx >= SynthPattern::kSteps) {
+        stepIdx < 0 || stepIdx >= SynthPattern::kSteps ||
+        bankIdx < 0 || bankIdx >= kBankCount) {
       error_ = true;
       return;
     }
-    SynthPattern& pattern = useBankB ? target_.synthBBank.patterns[patternIdx]
-                                     : target_.synthABank.patterns[patternIdx];
+    SynthPattern& pattern = useBankB ? target_.synthBBanks[bankIdx].patterns[patternIdx]
+                                     : target_.synthABanks[bankIdx].patterns[patternIdx];
     if (lastKey_ == "slide") {
       pattern.steps[stepIdx].slide = value;
     } else if (lastKey_ == "accent") {
@@ -576,6 +668,16 @@ bool SceneJsonObserver::synthMute(int idx) const {
   return synthMute_[clamped];
 }
 
+bool SceneJsonObserver::synthDistortionEnabled(int idx) const {
+  int clamped = idx < 0 ? 0 : idx > 1 ? 1 : idx;
+  return synthDistortion_[clamped];
+}
+
+bool SceneJsonObserver::synthDelayEnabled(int idx) const {
+  int clamped = idx < 0 ? 0 : idx > 1 ? 1 : idx;
+  return synthDelay_[clamped];
+}
+
 const SynthParameters& SceneJsonObserver::synthParameters(int synthIdx) const {
   int clamped = synthIdx < 0 ? 0 : synthIdx > 1 ? 1 : synthIdx;
   return synthParameters_[clamped];
@@ -601,6 +703,10 @@ void SceneManager::loadDefaultScene() {
   for (int i = 0; i < DrumPatternSet::kVoices; ++i) drumMute_[i] = false;
   synthMute_[0] = false;
   synthMute_[1] = false;
+  synthDistortion_[0] = false;
+  synthDistortion_[1] = false;
+  synthDelay_[0] = false;
+  synthDelay_[1] = false;
   synthParameters_[0] = SynthParameters();
   synthParameters_[1] = SynthParameters();
   setBpm(100.0f);
@@ -612,14 +718,16 @@ void SceneManager::loadDefaultScene() {
   scene_.song.positions[0].patterns[1] = 0;
   scene_.song.positions[0].patterns[2] = 0;
 
-  for (int i = 0; i < Bank<DrumPatternSet>::kPatterns; ++i) {
-    for (int v = 0; v < DrumPatternSet::kVoices; ++v) {
-      clearDrumPattern(scene_.drumBank.patterns[i].voices[v]);
+  for (int b = 0; b < kBankCount; ++b) {
+    for (int i = 0; i < Bank<DrumPatternSet>::kPatterns; ++i) {
+      for (int v = 0; v < DrumPatternSet::kVoices; ++v) {
+        clearDrumPattern(scene_.drumBanks[b].patterns[i].voices[v]);
+      }
     }
-  }
-  for (int i = 0; i < Bank<SynthPattern>::kPatterns; ++i) {
-    clearSynthPattern(scene_.synthABank.patterns[i]);
-    clearSynthPattern(scene_.synthBBank.patterns[i]);
+    for (int i = 0; i < Bank<SynthPattern>::kPatterns; ++i) {
+      clearSynthPattern(scene_.synthABanks[b].patterns[i]);
+      clearSynthPattern(scene_.synthBBanks[b].patterns[i]);
+    }
   }
 
   int8_t notes[SynthPattern::kSteps] = {48, 48, 55, 55, 50, 50, 55, 55,
@@ -667,13 +775,13 @@ void SceneManager::loadDefaultScene() {
                                     false, false, false, false, true,  false, false, false};
 
   for (int i = 0; i < SynthPattern::kSteps; ++i) {
-    scene_.synthABank.patterns[0].steps[i].note = notes[i];
-    scene_.synthABank.patterns[0].steps[i].accent = accent[i];
-    scene_.synthABank.patterns[0].steps[i].slide = slide[i];
+    scene_.synthABanks[0].patterns[0].steps[i].note = notes[i];
+    scene_.synthABanks[0].patterns[0].steps[i].accent = accent[i];
+    scene_.synthABanks[0].patterns[0].steps[i].slide = slide[i];
 
-    scene_.synthBBank.patterns[0].steps[i].note = notes2[i];
-    scene_.synthBBank.patterns[0].steps[i].accent = accent2[i];
-    scene_.synthBBank.patterns[0].steps[i].slide = slide2[i];
+    scene_.synthBBanks[0].patterns[0].steps[i].note = notes2[i];
+    scene_.synthBBanks[0].patterns[0].steps[i].accent = accent2[i];
+    scene_.synthBBanks[0].patterns[0].steps[i].slide = slide2[i];
   }
 
   for (int i = 0; i < DrumPattern::kSteps; ++i) {
@@ -681,29 +789,29 @@ void SceneManager::loadDefaultScene() {
     if (openHat[i]) {
       hatVal = false;
     }
-    scene_.drumBank.patterns[0].voices[0].steps[i].hit = kick[i];
-    scene_.drumBank.patterns[0].voices[0].steps[i].accent = kick[i];
+    scene_.drumBanks[0].patterns[0].voices[0].steps[i].hit = kick[i];
+    scene_.drumBanks[0].patterns[0].voices[0].steps[i].accent = kick[i];
 
-    scene_.drumBank.patterns[0].voices[1].steps[i].hit = snare[i];
-    scene_.drumBank.patterns[0].voices[1].steps[i].accent = snare[i];
+    scene_.drumBanks[0].patterns[0].voices[1].steps[i].hit = snare[i];
+    scene_.drumBanks[0].patterns[0].voices[1].steps[i].accent = snare[i];
 
-    scene_.drumBank.patterns[0].voices[2].steps[i].hit = hatVal;
-    scene_.drumBank.patterns[0].voices[2].steps[i].accent = hatVal;
+    scene_.drumBanks[0].patterns[0].voices[2].steps[i].hit = hatVal;
+    scene_.drumBanks[0].patterns[0].voices[2].steps[i].accent = hatVal;
 
-    scene_.drumBank.patterns[0].voices[3].steps[i].hit = openHat[i];
-    scene_.drumBank.patterns[0].voices[3].steps[i].accent = openHat[i];
+    scene_.drumBanks[0].patterns[0].voices[3].steps[i].hit = openHat[i];
+    scene_.drumBanks[0].patterns[0].voices[3].steps[i].accent = openHat[i];
 
-    scene_.drumBank.patterns[0].voices[4].steps[i].hit = midTom[i];
-    scene_.drumBank.patterns[0].voices[4].steps[i].accent = midTom[i];
+    scene_.drumBanks[0].patterns[0].voices[4].steps[i].hit = midTom[i];
+    scene_.drumBanks[0].patterns[0].voices[4].steps[i].accent = midTom[i];
 
-    scene_.drumBank.patterns[0].voices[5].steps[i].hit = highTom[i];
-    scene_.drumBank.patterns[0].voices[5].steps[i].accent = highTom[i];
+    scene_.drumBanks[0].patterns[0].voices[5].steps[i].hit = highTom[i];
+    scene_.drumBanks[0].patterns[0].voices[5].steps[i].accent = highTom[i];
 
-    scene_.drumBank.patterns[0].voices[6].steps[i].hit = rim[i];
-    scene_.drumBank.patterns[0].voices[6].steps[i].accent = rim[i];
+    scene_.drumBanks[0].patterns[0].voices[6].steps[i].hit = rim[i];
+    scene_.drumBanks[0].patterns[0].voices[6].steps[i].accent = rim[i];
 
-    scene_.drumBank.patterns[0].voices[7].steps[i].hit = clap[i];
-    scene_.drumBank.patterns[0].voices[7].steps[i].accent = clap[i];
+    scene_.drumBanks[0].patterns[0].voices[7].steps[i].hit = clap[i];
+    scene_.drumBanks[0].patterns[0].voices[7].steps[i].accent = clap[i];
   }
 }
 
@@ -712,57 +820,65 @@ Scene& SceneManager::currentScene() { return scene_; }
 const Scene& SceneManager::currentScene() const { return scene_; }
 
 const DrumPatternSet& SceneManager::getCurrentDrumPattern() const {
-  return scene_.drumBank.patterns[clampPatternIndex(drumPatternIndex_)];
+  int bank = clampBankIndex(drumBankIndex_);
+  return scene_.drumBanks[bank].patterns[clampPatternIndex(drumPatternIndex_)];
 }
 
 DrumPatternSet& SceneManager::editCurrentDrumPattern() {
-  return scene_.drumBank.patterns[clampPatternIndex(drumPatternIndex_)];
+  int bank = clampBankIndex(drumBankIndex_);
+  return scene_.drumBanks[bank].patterns[clampPatternIndex(drumPatternIndex_)];
 }
 
 const SynthPattern& SceneManager::getCurrentSynthPattern(int synthIndex) const {
   int idx = clampSynthIndex(synthIndex);
   int patternIndex = clampPatternIndex(synthPatternIndex_[idx]);
+  int bank = clampBankIndex(synthBankIndex_[idx]);
   if (idx == 0) {
-    return scene_.synthABank.patterns[patternIndex];
+    return scene_.synthABanks[bank].patterns[patternIndex];
   }
-  return scene_.synthBBank.patterns[patternIndex];
+  return scene_.synthBBanks[bank].patterns[patternIndex];
 }
 
 SynthPattern& SceneManager::editCurrentSynthPattern(int synthIndex) {
   int idx = clampSynthIndex(synthIndex);
   int patternIndex = clampPatternIndex(synthPatternIndex_[idx]);
+  int bank = clampBankIndex(synthBankIndex_[idx]);
   if (idx == 0) {
-    return scene_.synthABank.patterns[patternIndex];
+    return scene_.synthABanks[bank].patterns[patternIndex];
   }
-  return scene_.synthBBank.patterns[patternIndex];
+  return scene_.synthBBanks[bank].patterns[patternIndex];
 }
 
 const SynthPattern& SceneManager::getSynthPattern(int synthIndex, int patternIndex) const {
   int idx = clampSynthIndex(synthIndex);
   int pat = clampPatternIndex(patternIndex);
+  int bank = clampBankIndex(synthBankIndex_[idx]);
   if (idx == 0) {
-    return scene_.synthABank.patterns[pat];
+    return scene_.synthABanks[bank].patterns[pat];
   }
-  return scene_.synthBBank.patterns[pat];
+  return scene_.synthBBanks[bank].patterns[pat];
 }
 
 SynthPattern& SceneManager::editSynthPattern(int synthIndex, int patternIndex) {
   int idx = clampSynthIndex(synthIndex);
   int pat = clampPatternIndex(patternIndex);
+  int bank = clampBankIndex(synthBankIndex_[idx]);
   if (idx == 0) {
-    return scene_.synthABank.patterns[pat];
+    return scene_.synthABanks[bank].patterns[pat];
   }
-  return scene_.synthBBank.patterns[pat];
+  return scene_.synthBBanks[bank].patterns[pat];
 }
 
 const DrumPatternSet& SceneManager::getDrumPatternSet(int patternIndex) const {
   int pat = clampPatternIndex(patternIndex);
-  return scene_.drumBank.patterns[pat];
+  int bank = clampBankIndex(drumBankIndex_);
+  return scene_.drumBanks[bank].patterns[pat];
 }
 
 DrumPatternSet& SceneManager::editDrumPatternSet(int patternIndex) {
   int pat = clampPatternIndex(patternIndex);
-  return scene_.drumBank.patterns[pat];
+  int bank = clampBankIndex(drumBankIndex_);
+  return scene_.drumBanks[bank].patterns[pat];
 }
 
 void SceneManager::setCurrentDrumPatternIndex(int idx) {
@@ -801,6 +917,26 @@ bool SceneManager::getSynthMute(int synthIdx) const {
   return synthMute_[clampedSynth];
 }
 
+void SceneManager::setSynthDistortionEnabled(int synthIdx, bool enabled) {
+  int clampedSynth = clampSynthIndex(synthIdx);
+  synthDistortion_[clampedSynth] = enabled;
+}
+
+bool SceneManager::getSynthDistortionEnabled(int synthIdx) const {
+  int clampedSynth = clampSynthIndex(synthIdx);
+  return synthDistortion_[clampedSynth];
+}
+
+void SceneManager::setSynthDelayEnabled(int synthIdx, bool enabled) {
+  int clampedSynth = clampSynthIndex(synthIdx);
+  synthDelay_[clampedSynth] = enabled;
+}
+
+bool SceneManager::getSynthDelayEnabled(int synthIdx) const {
+  int clampedSynth = clampSynthIndex(synthIdx);
+  return synthDelay_[clampedSynth];
+}
+
 void SceneManager::setSynthParameters(int synthIdx, const SynthParameters& params) {
   int clampedSynth = clampSynthIndex(synthIdx);
   synthParameters_[clampedSynth] = params;
@@ -829,9 +965,7 @@ void SceneManager::setSongPattern(int position, SongTrack track, int patternInde
   if (pos >= Song::kMaxPositions) pos = Song::kMaxPositions - 1;
   int trackIdx = songTrackToIndex(track);
   if (trackIdx < 0 || trackIdx >= SongPosition::kTrackCount) return;
-  int pat = patternIndex;
-  if (pat < -1) pat = -1;
-  if (pat >= Bank<SynthPattern>::kPatterns) pat = Bank<SynthPattern>::kPatterns - 1;
+  int pat = clampSongPatternIndex(patternIndex);
   if (pos >= scene_.song.length) setSongLength(pos + 1);
   scene_.song.positions[pos].patterns[trackIdx] = static_cast<int8_t>(pat);
 }
@@ -849,7 +983,7 @@ int SceneManager::songPattern(int position, SongTrack track) const {
   int trackIdx = songTrackToIndex(track);
   if (trackIdx < 0 || trackIdx >= SongPosition::kTrackCount) return -1;
   if (position >= scene_.song.length) return -1;
-  return scene_.song.positions[position].patterns[trackIdx];
+  return clampSongPatternIndex(scene_.song.positions[position].patterns[trackIdx]);
 }
 
 void SceneManager::setSongLength(int length) {
@@ -879,7 +1013,7 @@ void SceneManager::setSongMode(bool enabled) { songMode_ = enabled; }
 bool SceneManager::songMode() const { return songMode_; }
 
 void SceneManager::setCurrentBankIndex(int instrumentId, int bankIdx) {
-  int clampedBank = 0; // Only a single bank exists today; retain parameter for future use
+  int clampedBank = clampBankIndex(bankIdx);
   if (instrumentId == 0) {
     drumBankIndex_ = clampedBank;
   } else {
@@ -889,8 +1023,9 @@ void SceneManager::setCurrentBankIndex(int instrumentId, int bankIdx) {
 }
 
 int SceneManager::getCurrentBankIndex(int instrumentId) const {
-  (void)instrumentId;
-  return 0;
+  if (instrumentId == 0) return drumBankIndex_;
+  int synthIdx = clampSynthIndex(instrumentId - 1);
+  return synthBankIndex_[synthIdx];
 }
 
 void SceneManager::setDrumStep(int voiceIdx, int step, bool hit, bool accent) {
@@ -913,12 +1048,12 @@ void SceneManager::buildSceneDocument(ArduinoJson::JsonDocument& doc) const {
   doc.clear();
   ArduinoJson::JsonObject root = doc.to<ArduinoJson::JsonObject>();
 
-  ArduinoJson::JsonArray drumBank = root["drumBank"].to<ArduinoJson::JsonArray>();
-  serializeDrumBank(scene_.drumBank, drumBank);
-  ArduinoJson::JsonArray synthABank = root["synthABank"].to<ArduinoJson::JsonArray>();
-  serializeSynthBank(scene_.synthABank, synthABank);
-  ArduinoJson::JsonArray synthBBank = root["synthBBank"].to<ArduinoJson::JsonArray>();
-  serializeSynthBank(scene_.synthBBank, synthBBank);
+  ArduinoJson::JsonArray drumBanks = root["drumBanks"].to<ArduinoJson::JsonArray>();
+  serializeDrumBanks(scene_.drumBanks, drumBanks);
+  ArduinoJson::JsonArray synthABanks = root["synthABanks"].to<ArduinoJson::JsonArray>();
+  serializeSynthBanks(scene_.synthABanks, synthABanks);
+  ArduinoJson::JsonArray synthBBanks = root["synthBBanks"].to<ArduinoJson::JsonArray>();
+  serializeSynthBanks(scene_.synthBBanks, synthBBanks);
   ArduinoJson::JsonObject songObj = root["song"].to<ArduinoJson::JsonObject>();
   int songLen = songLength();
   songObj["length"] = songLen;
@@ -963,23 +1098,32 @@ void SceneManager::buildSceneDocument(ArduinoJson::JsonDocument& doc) const {
     param["envDecay"] = synthParameters_[i].envDecay;
     param["oscType"] = synthParameters_[i].oscType;
   }
+  ArduinoJson::JsonArray synthDistortion = state["synthDistortion"].to<ArduinoJson::JsonArray>();
+  synthDistortion.add(synthDistortion_[0]);
+  synthDistortion.add(synthDistortion_[1]);
+  ArduinoJson::JsonArray synthDelay = state["synthDelay"].to<ArduinoJson::JsonArray>();
+  synthDelay.add(synthDelay_[0]);
+  synthDelay.add(synthDelay_[1]);
 }
 
 bool SceneManager::applySceneDocument(const ArduinoJson::JsonDocument& doc) {
   ArduinoJson::JsonObjectConst obj = doc.as<ArduinoJson::JsonObjectConst>();
   if (obj.isNull()) return false;
 
-  ArduinoJson::JsonArrayConst drumBank = obj["drumBank"].as<ArduinoJson::JsonArrayConst>();
-  ArduinoJson::JsonArrayConst synthABank = obj["synthABank"].as<ArduinoJson::JsonArrayConst>();
-  ArduinoJson::JsonArrayConst synthBBank = obj["synthBBank"].as<ArduinoJson::JsonArrayConst>();
-  if (drumBank.isNull() || synthABank.isNull() || synthBBank.isNull()) return false;
+  ArduinoJson::JsonVariantConst drumBanksVal = obj["drumBanks"];
+  ArduinoJson::JsonVariantConst synthABanksVal = obj["synthABanks"];
+  ArduinoJson::JsonVariantConst synthBBanksVal = obj["synthBBanks"];
+  if (drumBanksVal.isNull()) drumBanksVal = obj["drumBank"];
+  if (synthABanksVal.isNull()) synthABanksVal = obj["synthABank"];
+  if (synthBBanksVal.isNull()) synthBBanksVal = obj["synthBBank"];
+  if (drumBanksVal.isNull() || synthABanksVal.isNull() || synthBBanksVal.isNull()) return false;
 
-  Scene loaded{};
-  clearSceneData(loaded);
+  auto loaded = std::make_unique<Scene>();
+  clearSceneData(*loaded);
 
-  if (!deserializeDrumBank(drumBank, loaded.drumBank)) return false;
-  if (!deserializeSynthBank(synthABank, loaded.synthABank)) return false;
-  if (!deserializeSynthBank(synthBBank, loaded.synthBBank)) return false;
+  if (!deserializeDrumBanks(drumBanksVal, loaded->drumBanks)) return false;
+  if (!deserializeSynthBanks(synthABanksVal, loaded->synthABanks)) return false;
+  if (!deserializeSynthBanks(synthBBanksVal, loaded->synthBBanks)) return false;
 
   int drumPatternIndex = 0;
   int synthPatternIndexA = 0;
@@ -989,6 +1133,8 @@ bool SceneManager::applySceneDocument(const ArduinoJson::JsonDocument& doc) {
   int synthBankIndexB = 0;
   bool drumMute[DrumPatternSet::kVoices] = {false, false, false, false, false, false, false, false};
   bool synthMute[2] = {false, false};
+  bool synthDistortion[2] = {false, false};
+  bool synthDelay[2] = {false, false};
   SynthParameters synthParams[2] = {SynthParameters(), SynthParameters()};
   float bpm = bpm_;
   Song loadedSong{};
@@ -1012,13 +1158,27 @@ bool SceneManager::applySceneDocument(const ArduinoJson::JsonDocument& doc) {
           auto a = posObj["a"];
           auto b = posObj["b"];
           auto d = posObj["drums"];
-          if (a.is<int>()) loadedSong.positions[posIdx].patterns[0] = a.as<int>();
-          if (b.is<int>()) loadedSong.positions[posIdx].patterns[1] = b.as<int>();
-          if (d.is<int>()) loadedSong.positions[posIdx].patterns[2] = d.as<int>();
+          if (a.is<int>()) {
+            loadedSong.positions[posIdx].patterns[0] = clampSongPatternIndex(a.as<int>());
+          }
+          if (b.is<int>()) {
+            loadedSong.positions[posIdx].patterns[1] = clampSongPatternIndex(b.as<int>());
+          }
+          if (d.is<int>()) {
+            loadedSong.positions[posIdx].patterns[2] = clampSongPatternIndex(d.as<int>());
+          }
         }
         if (posIdx + 1 > loadedSong.length) loadedSong.length = posIdx + 1;
         ++posIdx;
       }
+    }
+    ArduinoJson::JsonArrayConst songDistortionArr = songObj["synthDistortion"].as<ArduinoJson::JsonArrayConst>();
+    if (!songDistortionArr.isNull()) {
+      if (!deserializeBoolArray(songDistortionArr, synthDistortion, 2)) return false;
+    }
+    ArduinoJson::JsonArrayConst songDelayArr = songObj["synthDelay"].as<ArduinoJson::JsonArrayConst>();
+    if (!songDelayArr.isNull()) {
+      if (!deserializeBoolArray(songDelayArr, synthDelay, 2)) return false;
     }
   }
 
@@ -1044,6 +1204,15 @@ bool SceneManager::applySceneDocument(const ArduinoJson::JsonDocument& doc) {
       ArduinoJson::JsonArrayConst synthMuteArr = muteObj["synth"].as<ArduinoJson::JsonArrayConst>();
       if (!synthMuteArr.isNull() && !deserializeBoolArray(synthMuteArr, synthMute, 2)) return false;
     }
+    ArduinoJson::JsonArrayConst synthDistortionArr = state["synthDistortion"].as<ArduinoJson::JsonArrayConst>();
+    if (!synthDistortionArr.isNull() &&
+        !deserializeBoolArray(synthDistortionArr, synthDistortion, 2)) {
+      return false;
+    }
+    ArduinoJson::JsonArrayConst synthDelayArr = state["synthDelay"].as<ArduinoJson::JsonArrayConst>();
+    if (!synthDelayArr.isNull() && !deserializeBoolArray(synthDelayArr, synthDelay, 2)) {
+      return false;
+    }
     ArduinoJson::JsonArrayConst synthParamsArr = state["synthParams"].as<ArduinoJson::JsonArrayConst>();
     if (!synthParamsArr.isNull()) {
       int idx = 0;
@@ -1061,24 +1230,31 @@ bool SceneManager::applySceneDocument(const ArduinoJson::JsonDocument& doc) {
 
   if (!hasSongObj) {
     loadedSong.length = 1;
-    loadedSong.positions[0].patterns[0] = clampPatternIndex(synthPatternIndexA);
-    loadedSong.positions[0].patterns[1] = clampPatternIndex(synthPatternIndexB);
-    loadedSong.positions[0].patterns[2] = clampPatternIndex(drumPatternIndex);
+    loadedSong.positions[0].patterns[0] = songPatternFromBank(synthBankIndexA,
+                                                             clampPatternIndex(synthPatternIndexA));
+    loadedSong.positions[0].patterns[1] = songPatternFromBank(synthBankIndexB,
+                                                             clampPatternIndex(synthPatternIndexB));
+    loadedSong.positions[0].patterns[2] = songPatternFromBank(drumBankIndex,
+                                                             clampPatternIndex(drumPatternIndex));
   }
 
-  scene_ = loaded;
+  scene_ = *loaded;
   scene_.song = loadedSong;
   drumPatternIndex_ = clampPatternIndex(drumPatternIndex);
   synthPatternIndex_[0] = clampPatternIndex(synthPatternIndexA);
   synthPatternIndex_[1] = clampPatternIndex(synthPatternIndexB);
-  drumBankIndex_ = clampIndex(drumBankIndex, 1);
-  synthBankIndex_[0] = clampIndex(synthBankIndexA, 1);
-  synthBankIndex_[1] = clampIndex(synthBankIndexB, 1);
+  drumBankIndex_ = clampIndex(drumBankIndex, kBankCount);
+  synthBankIndex_[0] = clampIndex(synthBankIndexA, kBankCount);
+  synthBankIndex_[1] = clampIndex(synthBankIndexB, kBankCount);
   for (int i = 0; i < DrumPatternSet::kVoices; ++i) {
     drumMute_[i] = drumMute[i];
   }
   synthMute_[0] = synthMute[0];
   synthMute_[1] = synthMute[1];
+  synthDistortion_[0] = synthDistortion[0];
+  synthDistortion_[1] = synthDistortion[1];
+  synthDelay_[0] = synthDelay[0];
+  synthDelay_[1] = synthDelay[1];
   synthParameters_[0] = synthParams[0];
   synthParameters_[1] = synthParams[1];
   setSongLength(scene_.song.length);
@@ -1105,8 +1281,8 @@ bool SceneManager::loadScene(const std::string& json) {
 }
 
 bool SceneManager::loadSceneEventedWithReader(JsonVisitor::NextChar nextChar) {
-  Scene loaded{};
-  clearSceneData(loaded);
+  auto loaded = std::make_unique<Scene>();
+  clearSceneData(*loaded);
 
   struct NextCharStream {
     JsonVisitor::NextChar next;
@@ -1115,29 +1291,36 @@ bool SceneManager::loadSceneEventedWithReader(JsonVisitor::NextChar nextChar) {
 
   NextCharStream stream{std::move(nextChar)};
   JsonVisitor visitor;
-  SceneJsonObserver observer(loaded, bpm_);
+  SceneJsonObserver observer(*loaded, bpm_);
   bool parsed = visitor.parse(stream, observer);
   if (!parsed || observer.hadError()) return false;
 
-  scene_ = loaded;
+  scene_ = *loaded;
   scene_.song = observer.song();
   drumPatternIndex_ = clampPatternIndex(observer.drumPatternIndex());
   synthPatternIndex_[0] = clampPatternIndex(observer.synthPatternIndex(0));
   synthPatternIndex_[1] = clampPatternIndex(observer.synthPatternIndex(1));
-  drumBankIndex_ = clampIndex(observer.drumBankIndex(), 1);
-  synthBankIndex_[0] = clampIndex(observer.synthBankIndex(0), 1);
-  synthBankIndex_[1] = clampIndex(observer.synthBankIndex(1), 1);
+  drumBankIndex_ = clampIndex(observer.drumBankIndex(), kBankCount);
+  synthBankIndex_[0] = clampIndex(observer.synthBankIndex(0), kBankCount);
+  synthBankIndex_[1] = clampIndex(observer.synthBankIndex(1), kBankCount);
   if (!observer.hasSong()) {
     scene_.song.length = 1;
-    scene_.song.positions[0].patterns[0] = synthPatternIndex_[0];
-    scene_.song.positions[0].patterns[1] = synthPatternIndex_[1];
-    scene_.song.positions[0].patterns[2] = drumPatternIndex_;
+    scene_.song.positions[0].patterns[0] = songPatternFromBank(synthBankIndex_[0],
+                                                               synthPatternIndex_[0]);
+    scene_.song.positions[0].patterns[1] = songPatternFromBank(synthBankIndex_[1],
+                                                               synthPatternIndex_[1]);
+    scene_.song.positions[0].patterns[2] = songPatternFromBank(drumBankIndex_,
+                                                               drumPatternIndex_);
   }
   for (int i = 0; i < DrumPatternSet::kVoices; ++i) {
     drumMute_[i] = observer.drumMute(i);
   }
   synthMute_[0] = observer.synthMute(0);
   synthMute_[1] = observer.synthMute(1);
+  synthDistortion_[0] = observer.synthDistortionEnabled(0);
+  synthDistortion_[1] = observer.synthDistortionEnabled(1);
+  synthDelay_[0] = observer.synthDelayEnabled(0);
+  synthDelay_[1] = observer.synthDelayEnabled(1);
   synthParameters_[0] = observer.synthParameters(0);
   synthParameters_[1] = observer.synthParameters(1);
   setSongLength(scene_.song.length);
@@ -1149,6 +1332,10 @@ bool SceneManager::loadSceneEventedWithReader(JsonVisitor::NextChar nextChar) {
 
 int SceneManager::clampPatternIndex(int idx) const {
   return clampIndex(idx, Bank<DrumPatternSet>::kPatterns);
+}
+
+int SceneManager::clampBankIndex(int idx) const {
+  return clampIndex(idx, kBankCount);
 }
 
 int SceneManager::clampSynthIndex(int idx) const {

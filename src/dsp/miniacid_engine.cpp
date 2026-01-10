@@ -136,6 +136,42 @@ float TempoDelay::process(float input) {
   return input + delayed * mix;
 }
 
+TubeDistortion::TubeDistortion()
+  : drive_(8.0f),
+    mix_(1.0f),
+    enabled_(false) {}
+
+void TubeDistortion::setDrive(float drive) {
+  if (drive < 0.1f)
+    drive = 0.1f;
+  if (drive > 10.0f)
+    drive = 10.0f;
+  drive_ = drive;
+}
+
+void TubeDistortion::setMix(float mix) {
+  if (mix < 0.0f)
+    mix = 0.0f;
+  if (mix > 1.0f)
+    mix = 1.0f;
+  mix_ = mix;
+}
+
+void TubeDistortion::setEnabled(bool on) { enabled_ = on; }
+
+bool TubeDistortion::isEnabled() const { return enabled_; }
+
+float TubeDistortion::process(float input) {
+  if (!enabled_) {
+    return input;
+  }
+  float driven = input * drive_;
+  float shaped = driven / (1.0f + fabsf(driven));
+  float comp = 1.0f / (1.0f + 0.3f * drive_); // simple loudness trim
+  shaped *= comp;
+  return input * (1.0f - mix_) + shaped * mix_;
+}
+
 MiniAcid::MiniAcid(float sampleRate, SceneStorage* sceneStorage)
   : voice303(sampleRate),
     voice3032(sampleRate),
@@ -155,6 +191,8 @@ MiniAcid::MiniAcid(float sampleRate, SceneStorage* sceneStorage)
     muteClap(false),
     delay303Enabled(false),
     delay3032Enabled(false),
+    distortion303Enabled(false),
+    distortion3032Enabled(false),
     bpmValue(100.0f),
     currentStepIndex(-1),
     samplesIntoStep(0),
@@ -162,9 +200,13 @@ MiniAcid::MiniAcid(float sampleRate, SceneStorage* sceneStorage)
     songMode_(false),
     songPlayheadPosition_(0),
     patternModeDrumPatternIndex_(0),
+    patternModeDrumBankIndex_(0),
     patternModeSynthPatternIndex_{0, 0},
+    patternModeSynthBankIndex_{0, 0},
     delay303(sampleRate),
-    delay3032(sampleRate) {
+    delay3032(sampleRate),
+    distortion303(),
+    distortion3032() {
   if (sampleRateValue <= 0.0f) sampleRateValue = 44100.0f;
   reset();
 }
@@ -202,6 +244,8 @@ void MiniAcid::reset() {
   muteClap = false;
   delay303Enabled = false;
   delay3032Enabled = false;
+  distortion303Enabled = false;
+  distortion3032Enabled = false;
   bpmValue = 100.0f;
   currentStepIndex = -1;
   samplesIntoStep = 0;
@@ -218,6 +262,8 @@ void MiniAcid::reset() {
   delay3032.setFeedback(0.32f);
   delay3032.setEnabled(delay3032Enabled);
   delay3032.setBpm(bpmValue);
+  distortion303.setEnabled(distortion303Enabled);
+  distortion3032.setEnabled(distortion3032Enabled);
   lastBufferCount = 0;
   for (int i = 0; i < AUDIO_BUFFER_SAMPLES; ++i) lastBuffer[i] = 0;
   songMode_ = false;
@@ -279,6 +325,15 @@ int MiniAcid::current303PatternIndex(int voiceIndex) const {
   return sceneManager_.getCurrentSynthPatternIndex(idx);
 }
 
+int MiniAcid::currentDrumBankIndex() const {
+  return sceneManager_.getCurrentBankIndex(0);
+}
+
+int MiniAcid::current303BankIndex(int voiceIndex) const {
+  int idx = clamp303Voice(voiceIndex);
+  return sceneManager_.getCurrentBankIndex(idx + 1);
+}
+
 bool MiniAcid::is303Muted(int voiceIndex) const {
   int idx = clamp303Voice(voiceIndex);
   return idx == 0 ? mute303 : mute303_2;
@@ -294,6 +349,10 @@ bool MiniAcid::isClapMuted() const { return muteClap; }
 bool MiniAcid::is303DelayEnabled(int voiceIndex) const {
   int idx = clamp303Voice(voiceIndex);
   return idx == 0 ? delay303Enabled : delay3032Enabled;
+}
+bool MiniAcid::is303DistortionEnabled(int voiceIndex) const {
+  int idx = clamp303Voice(voiceIndex);
+  return idx == 0 ? distortion303Enabled : distortion3032Enabled;
 }
 const Parameter& MiniAcid::parameter303(TB303ParamId id, int voiceIndex) const {
   int idx = clamp303Voice(voiceIndex);
@@ -355,6 +414,9 @@ void MiniAcid::setSongMode(bool enabled) {
     patternModeDrumPatternIndex_ = sceneManager_.getCurrentDrumPatternIndex();
     patternModeSynthPatternIndex_[0] = sceneManager_.getCurrentSynthPatternIndex(0);
     patternModeSynthPatternIndex_[1] = sceneManager_.getCurrentSynthPatternIndex(1);
+    patternModeDrumBankIndex_ = sceneManager_.getCurrentBankIndex(0);
+    patternModeSynthBankIndex_[0] = sceneManager_.getCurrentBankIndex(1);
+    patternModeSynthBankIndex_[1] = sceneManager_.getCurrentBankIndex(2);
     songPlayheadPosition_ = clampSongPosition(sceneManager_.getSongPosition());
     sceneManager_.setSongPosition(songPlayheadPosition_);
     applySongPositionSelection();
@@ -362,6 +424,9 @@ void MiniAcid::setSongMode(bool enabled) {
     sceneManager_.setCurrentDrumPatternIndex(patternModeDrumPatternIndex_);
     sceneManager_.setCurrentSynthPatternIndex(0, patternModeSynthPatternIndex_[0]);
     sceneManager_.setCurrentSynthPatternIndex(1, patternModeSynthPatternIndex_[1]);
+    sceneManager_.setCurrentBankIndex(0, patternModeDrumBankIndex_);
+    sceneManager_.setCurrentBankIndex(1, patternModeSynthBankIndex_[0]);
+    sceneManager_.setCurrentBankIndex(2, patternModeSynthBankIndex_[1]);
   }
   songMode_ = enabled;
   sceneManager_.setSongMode(songMode_);
@@ -407,16 +472,19 @@ const Song& MiniAcid::song() const { return sceneManager_.song(); }
 int MiniAcid::display303PatternIndex(int voiceIndex) const {
   int idx = clamp303Voice(voiceIndex);
   if (songMode_) {
-    int pat = sceneManager_.songPattern(sceneManager_.getSongPosition(),
-                                        idx == 0 ? SongTrack::SynthA : SongTrack::SynthB);
-    return pat;
+    int combined = sceneManager_.songPattern(sceneManager_.getSongPosition(),
+                                             idx == 0 ? SongTrack::SynthA : SongTrack::SynthB);
+    if (combined < 0) return -1;
+    return songPatternIndexInBank(combined);
   }
   return sceneManager_.getCurrentSynthPatternIndex(idx);
 }
 
 int MiniAcid::displayDrumPatternIndex() const {
   if (songMode_) {
-    return sceneManager_.songPattern(sceneManager_.getSongPosition(), SongTrack::Drums);
+    int combined = sceneManager_.songPattern(sceneManager_.getSongPosition(), SongTrack::Drums);
+    if (combined < 0) return -1;
+    return songPatternIndexInBank(combined);
   }
   return sceneManager_.getCurrentDrumPatternIndex();
 }
@@ -454,6 +522,16 @@ void MiniAcid::toggleDelay303(int voiceIndex) {
     delay3032.setEnabled(delay3032Enabled);
   }
 }
+void MiniAcid::toggleDistortion303(int voiceIndex) {
+  int idx = clamp303Voice(voiceIndex);
+  if (idx == 0) {
+    distortion303Enabled = !distortion303Enabled;
+    distortion303.setEnabled(distortion303Enabled);
+  } else {
+    distortion3032Enabled = !distortion3032Enabled;
+    distortion3032.setEnabled(distortion3032Enabled);
+  }
+}
 
 void MiniAcid::setDrumPatternIndex(int patternIndex) {
   sceneManager_.setCurrentDrumPatternIndex(patternIndex);
@@ -466,6 +544,11 @@ void MiniAcid::shiftDrumPatternIndex(int delta) {
   if (next >= Bank<DrumPatternSet>::kPatterns) next = 0;
   sceneManager_.setCurrentDrumPatternIndex(next);
 }
+
+void MiniAcid::setDrumBankIndex(int bankIndex) {
+  sceneManager_.setCurrentBankIndex(0, bankIndex);
+}
+
 void MiniAcid::adjust303Parameter(TB303ParamId id, int steps, int voiceIndex) {
   int idx = clamp303Voice(voiceIndex);
   if (idx == 0)
@@ -491,6 +574,11 @@ void MiniAcid::shift303PatternIndex(int voiceIndex, int delta) {
   if (next < 0) next = Bank<SynthPattern>::kPatterns - 1;
   if (next >= Bank<SynthPattern>::kPatterns) next = 0;
   sceneManager_.setCurrentSynthPatternIndex(idx, next);
+}
+
+void MiniAcid::set303BankIndex(int voiceIndex, int bankIndex) {
+  int idx = clamp303Voice(voiceIndex);
+  sceneManager_.setCurrentBankIndex(idx + 1, bankIndex);
 }
 void MiniAcid::adjust303StepNote(int voiceIndex, int stepIndex, int semitoneDelta) {
   int idx = clamp303Voice(voiceIndex);
@@ -598,12 +686,9 @@ int MiniAcid::songPatternIndexForTrack(SongTrack track) const {
     }
   }
   int pos = clampSongPosition(sceneManager_.getSongPosition());
-  int pat = sceneManager_.songPattern(pos, track);
-  if (pat < 0) return -1;
-  int maxPatterns = track == SongTrack::Drums ? Bank<DrumPatternSet>::kPatterns
-                                              : Bank<SynthPattern>::kPatterns;
-  if (pat >= maxPatterns) pat = maxPatterns - 1;
-  return pat;
+  int combined = sceneManager_.songPattern(pos, track);
+  if (combined < 0) return -1;
+  return songPatternIndexInBank(combined);
 }
 
 const SynthPattern& MiniAcid::activeSynthPattern(int synthIndex) const {
@@ -640,13 +725,41 @@ void MiniAcid::applySongPositionSelection() {
   int patB = sceneManager_.songPattern(pos, SongTrack::SynthB);
   int patD = sceneManager_.songPattern(pos, SongTrack::Drums);
 
-  if (patA < 0) patA = patternModeSynthPatternIndex_[0];
-  if (patB < 0) patB = patternModeSynthPatternIndex_[1];
-  if (patD < 0) patD = patternModeDrumPatternIndex_;
+  if (patA < 0) {
+    sceneManager_.setCurrentBankIndex(1, patternModeSynthBankIndex_[0]);
+    sceneManager_.setCurrentSynthPatternIndex(0, patternModeSynthPatternIndex_[0]);
+  } else {
+    int bank = songPatternBank(patA);
+    int pat = songPatternIndexInBank(patA);
+    if (bank < 0) bank = 0;
+    if (bank >= kBankCount) bank = kBankCount - 1;
+    sceneManager_.setCurrentBankIndex(1, bank);
+    sceneManager_.setCurrentSynthPatternIndex(0, pat);
+  }
 
-  sceneManager_.setCurrentSynthPatternIndex(0, patA);
-  sceneManager_.setCurrentSynthPatternIndex(1, patB);
-  sceneManager_.setCurrentDrumPatternIndex(patD);
+  if (patB < 0) {
+    sceneManager_.setCurrentBankIndex(2, patternModeSynthBankIndex_[1]);
+    sceneManager_.setCurrentSynthPatternIndex(1, patternModeSynthPatternIndex_[1]);
+  } else {
+    int bank = songPatternBank(patB);
+    int pat = songPatternIndexInBank(patB);
+    if (bank < 0) bank = 0;
+    if (bank >= kBankCount) bank = kBankCount - 1;
+    sceneManager_.setCurrentBankIndex(2, bank);
+    sceneManager_.setCurrentSynthPatternIndex(1, pat);
+  }
+
+  if (patD < 0) {
+    sceneManager_.setCurrentBankIndex(0, patternModeDrumBankIndex_);
+    sceneManager_.setCurrentDrumPatternIndex(patternModeDrumPatternIndex_);
+  } else {
+    int bank = songPatternBank(patD);
+    int pat = songPatternIndexInBank(patD);
+    if (bank < 0) bank = 0;
+    if (bank >= kBankCount) bank = kBankCount - 1;
+    sceneManager_.setCurrentBankIndex(0, bank);
+    sceneManager_.setCurrentDrumPatternIndex(pat);
+  }
 }
 
 void MiniAcid::advanceSongPlayhead() {
@@ -777,6 +890,7 @@ void MiniAcid::generateAudioBuffer(int16_t *buffer, size_t numSamples) {
       float sample303 = 0.0f;
       if (!mute303) {
         float v = voice303.process() * 0.5f;
+        v = distortion303.process(v);
         sample303 += delay303.process(v);
       } else {
         // keep delay line ticking even while muted to let tails decay
@@ -784,6 +898,7 @@ void MiniAcid::generateAudioBuffer(int16_t *buffer, size_t numSamples) {
       }
       if (!mute303_2) {
         float v = voice3032.process() * 0.5f;
+        v = distortion3032.process(v);
         sample303 += delay3032.process(v);
       } else {
         delay3032.process(0.0f);
@@ -925,6 +1040,10 @@ void MiniAcid::applySceneStateFromManager() {
   muteHighTom = sceneManager_.getDrumMute(kDrumHighTomVoice);
   muteRim = sceneManager_.getDrumMute(kDrumRimVoice);
   muteClap = sceneManager_.getDrumMute(kDrumClapVoice);
+  distortion303Enabled = sceneManager_.getSynthDistortionEnabled(0);
+  distortion3032Enabled = sceneManager_.getSynthDistortionEnabled(1);
+  delay303Enabled = sceneManager_.getSynthDelayEnabled(0);
+  delay3032Enabled = sceneManager_.getSynthDelayEnabled(1);
 
   const SynthParameters& paramsA = sceneManager_.getSynthParameters(0);
   const SynthParameters& paramsB = sceneManager_.getSynthParameters(1);
@@ -940,6 +1059,10 @@ void MiniAcid::applySceneStateFromManager() {
   voice3032.setParameter(TB303ParamId::EnvAmount, paramsB.envAmount);
   voice3032.setParameter(TB303ParamId::EnvDecay, paramsB.envDecay);
   voice3032.setParameter(TB303ParamId::Oscillator, static_cast<float>(paramsB.oscType));
+  distortion303.setEnabled(distortion303Enabled);
+  distortion3032.setEnabled(distortion3032Enabled);
+  delay303.setEnabled(delay303Enabled);
+  delay3032.setEnabled(delay3032Enabled);
 
   patternModeDrumPatternIndex_ = sceneManager_.getCurrentDrumPatternIndex();
   patternModeSynthPatternIndex_[0] = sceneManager_.getCurrentSynthPatternIndex(0);
@@ -964,6 +1087,10 @@ void MiniAcid::syncSceneStateToManager() {
   sceneManager_.setDrumMute(kDrumHighTomVoice, muteHighTom);
   sceneManager_.setDrumMute(kDrumRimVoice, muteRim);
   sceneManager_.setDrumMute(kDrumClapVoice, muteClap);
+  sceneManager_.setSynthDistortionEnabled(0, distortion303Enabled);
+  sceneManager_.setSynthDistortionEnabled(1, distortion3032Enabled);
+  sceneManager_.setSynthDelayEnabled(0, delay303Enabled);
+  sceneManager_.setSynthDelayEnabled(1, delay3032Enabled);
   sceneManager_.setSongMode(songMode_);
   int songPosToStore = songMode_ ? songPlayheadPosition_ : sceneManager_.getSongPosition();
   sceneManager_.setSongPosition(clampSongPosition(songPosToStore));

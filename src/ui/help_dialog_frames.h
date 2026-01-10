@@ -101,6 +101,8 @@ inline void drawHelpPage303(IGfx& gfx, int x, int y, int w, int h) {
   drawHelpItem(gfx, layout.left_x, left_y, "F / V", "decay +/-", COLOR_KNOB_4);
   left_y += lh;
   drawHelpItem(gfx, layout.left_x, left_y, "M", "toggle delay", IGfxColor::Magenta());
+  left_y += lh;
+  drawHelpItem(gfx, layout.left_x, left_y, "N", "toggle distortion", IGfxColor::Magenta());
 
   drawHelpHeading(gfx, layout.right_x, right_y, "Mutes");
   right_y += lh;

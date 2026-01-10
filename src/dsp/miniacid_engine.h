@@ -50,6 +50,21 @@ private:
   bool enabled;
 };
 
+class TubeDistortion {
+public:
+  TubeDistortion();
+  void setDrive(float drive);
+  void setMix(float mix);
+  void setEnabled(bool on);
+  bool isEnabled() const;
+  float process(float input);
+
+private:
+  float drive_;
+  float mix_;
+  bool enabled_;
+};
+
 
 enum class MiniAcidParamId : uint8_t {
   MainVolume = 0,
@@ -73,6 +88,8 @@ public:
   int currentStep() const;
   int currentDrumPatternIndex() const;
   int current303PatternIndex(int voiceIndex = 0) const;
+  int currentDrumBankIndex() const;
+  int current303BankIndex(int voiceIndex = 0) const;
   bool is303Muted(int voiceIndex = 0) const;
   bool isKickMuted() const;
   bool isSnareMuted() const;
@@ -83,6 +100,7 @@ public:
   bool isRimMuted() const;
   bool isClapMuted() const;
   bool is303DelayEnabled(int voiceIndex = 0) const;
+  bool is303DistortionEnabled(int voiceIndex = 0) const;
   const Parameter& parameter303(TB303ParamId id, int voiceIndex = 0) const;
   size_t copyLastAudio(int16_t *dst, size_t maxSamples) const;
   const int8_t* pattern303Steps(int voiceIndex = 0) const;
@@ -125,12 +143,15 @@ public:
   void toggleMuteRim();
   void toggleMuteClap();
   void toggleDelay303(int voiceIndex = 0);
+  void toggleDistortion303(int voiceIndex = 0);
   void setDrumPatternIndex(int patternIndex);
   void shiftDrumPatternIndex(int delta);
+  void setDrumBankIndex(int bankIndex);
   void adjust303Parameter(TB303ParamId id, int steps, int voiceIndex = 0);
   void set303Parameter(TB303ParamId id, float value, int voiceIndex = 0);
   void set303PatternIndex(int voiceIndex, int patternIndex);
   void shift303PatternIndex(int voiceIndex, int delta);
+  void set303BankIndex(int voiceIndex, int bankIndex);
   void adjust303StepNote(int voiceIndex, int stepIndex, int semitoneDelta);
   void adjust303StepOctave(int voiceIndex, int stepIndex, int octaveDelta);
   void clear303StepNote(int voiceIndex, int stepIndex);
@@ -193,6 +214,8 @@ private:
   volatile bool muteClap;
   volatile bool delay303Enabled;
   volatile bool delay3032Enabled;
+  volatile bool distortion303Enabled;
+  volatile bool distortion3032Enabled;
   volatile float bpmValue;
   volatile int currentStepIndex;
   unsigned long samplesIntoStep;
@@ -200,10 +223,14 @@ private:
   bool songMode_;
   int songPlayheadPosition_;
   int patternModeDrumPatternIndex_;
+  int patternModeDrumBankIndex_;
   int patternModeSynthPatternIndex_[NUM_303_VOICES];
+  int patternModeSynthBankIndex_[NUM_303_VOICES];
 
   TempoDelay delay303;
   TempoDelay delay3032;
+  TubeDistortion distortion303;
+  TubeDistortion distortion3032;
   int16_t lastBuffer[AUDIO_BUFFER_SAMPLES];
   size_t lastBufferCount;
 
@@ -224,4 +251,3 @@ public:
 inline Parameter& MiniAcid::miniParameter(MiniAcidParamId id) {
   return params[static_cast<int>(id)];
 }
-

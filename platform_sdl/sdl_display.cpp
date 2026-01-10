@@ -21,16 +21,25 @@
 #endif
 #include <iostream>
 
-SDL_Texture* render_target_ = nullptr;
-int window_scale_ = 2;
-
 SDLDisplay::SDLDisplay(int w, int h, const char* title)
     : w_(w), h_(h), title_(title) {}
 
 SDLDisplay::~SDLDisplay() {
-  if (renderer_) SDL_DestroyRenderer(renderer_);
-  if (window_) SDL_DestroyWindow(window_);
-  if (render_target_) SDL_DestroyTexture(render_target_);
+  if (render_target_) {
+    if (renderer_) {
+      SDL_SetRenderTarget(renderer_, nullptr);
+    }
+    SDL_DestroyTexture(render_target_);
+    render_target_ = nullptr;
+  }
+  if (renderer_) {
+    SDL_DestroyRenderer(renderer_);
+    renderer_ = nullptr;
+  }
+  if (window_) {
+    SDL_DestroyWindow(window_);
+    window_ = nullptr;
+  }
   if (owns_sdl_) SDL_Quit();
 }
 

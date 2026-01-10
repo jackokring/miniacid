@@ -11,10 +11,12 @@
 #include <chrono>
 #endif
 
+#include "../audio/audio_recorder.h"
 #include "ui_colors.h"
 #include "ui_utils.h"
 #include "pages/drum_sequencer_page.h"
 #include "pages/help_page.h"
+#include "pages/help_dialog.h"
 #include "pages/pattern_edit_page.h"
 #include "pages/project_page.h"
 #include "pages/song_page.h"
@@ -56,16 +58,24 @@ void MiniAcidDisplay::setAudioGuard(AudioGuard guard) {
   audio_guard_ = std::move(guard);
 }
 
+void MiniAcidDisplay::setAudioRecorder(IAudioRecorder* recorder) {
+  audio_recorder_ = recorder;
+}
+
 void MiniAcidDisplay::dismissSplash() {
   splash_active_ = false;
 }
 
 void MiniAcidDisplay::nextPage() {
   page_index_ = (page_index_ + 1) % static_cast<int>(pages_.size());
+  help_dialog_visible_ = false;
+  help_dialog_.reset();
 }
 
 void MiniAcidDisplay::previousPage() {
   page_index_ = (page_index_ - 1 + static_cast<int>(pages_.size())) % static_cast<int>(pages_.size());
+  help_dialog_visible_ = false;
+  help_dialog_.reset();
 }
 
 void MiniAcidDisplay::update() {
@@ -102,9 +112,12 @@ void MiniAcidDisplay::update() {
 
   if (pages_[page_index_]) {
     int title_h = drawPageTitle(content_x, content_y, content_w, pages_[page_index_]->getTitle().c_str());
-    pages_[page_index_]->draw(gfx_, content_x, content_y + title_h, content_w, content_h - title_h);
-    if (help_dialog_visible_ && pages_[page_index_]->hasHelpDialog()) {
-      drawHelpDialog(*pages_[page_index_], content_x, content_y + title_h, content_w, content_h - title_h);
+    // we don't need to do this each time, but for simplicity we do it here
+    pages_[page_index_]->setBoundaries(Rect(content_x, content_y + title_h, content_w, content_h - title_h));
+    pages_[page_index_]->draw(gfx_);
+    if (help_dialog_visible_ && help_dialog_) {
+      help_dialog_->setBoundaries(Rect(content_x, content_y + title_h, content_w, content_h - title_h));
+      help_dialog_->draw(gfx_);
     }
   }
 
@@ -147,46 +160,15 @@ void MiniAcidDisplay::drawSplashScreen() {
   centerText(info_y, "Use keys [ ] to move around", COLOR_WHITE);
   centerText(info_y + small_h, "Space - to start/stop sound", COLOR_WHITE);
   centerText(info_y + 2 * small_h, "ESC - for help on each page", COLOR_WHITE);
+  
+  centerText(info_y + 3 * small_h + 5, "v0.0.6-dev", IGfxColor::Gray());
+  
+  // char build_info[64];
+  // snprintf(build_info, sizeof(build_info), "Built: %s %s", __DATE__, __TIME__);
+  // centerText(info_y + 4 * small_h + 6, build_info, IGfxColor::DarkGray());
 
   gfx_.flush();
   gfx_.endWrite();
-}
-
-void MiniAcidDisplay::drawHelpDialog(IPage& page, int x, int y, int w, int h) {
-  if (w <= 4 || h <= 4) return;
-
-  int dialog_margin = 2;
-  int dialog_x = x + dialog_margin;
-  int dialog_y = y + dialog_margin;
-  int dialog_w = w - dialog_margin * 2;
-  int dialog_h = h - dialog_margin * 2;
-  if (dialog_w <= 4 || dialog_h <= 4) return;
-
-  gfx_.fillRect(dialog_x, dialog_y, dialog_w, dialog_h, COLOR_DARKER);
-  gfx_.drawRect(dialog_x, dialog_y, dialog_w, dialog_h, COLOR_WHITE);
-
-  int legend_h = gfx_.fontHeight() + 4;
-  if (legend_h < 10) legend_h = 10;
-  int legend_y = dialog_y + dialog_h - legend_h;
-  if (legend_y <= dialog_y + 2) return;
-
-  gfx_.setTextColor(COLOR_LABEL);
-  gfx_.drawLine(dialog_x + 2, legend_y, dialog_x + dialog_w - 3, legend_y);
-
-  const char* legend = "ESC to close help";
-  int legend_x = dialog_x + (dialog_w - textWidth(gfx_, legend)) / 2;
-  if (legend_x < dialog_x + 4) legend_x = dialog_x + 4;
-  int legend_text_y = legend_y + (legend_h - gfx_.fontHeight()) / 2;
-  gfx_.drawText(legend_x, legend_text_y, legend);
-  gfx_.setTextColor(COLOR_WHITE);
-
-  int body_x = dialog_x + 4;
-  int body_y = dialog_y + 4;
-  int body_w = dialog_w - 8;
-  int body_h = legend_y - body_y - 2;
-  if (body_w <= 0 || body_h <= 0) return;
-
-  page.drawHelpBody(gfx_, body_x, body_y, body_w, body_h);
 }
 
 void MiniAcidDisplay::drawMutesSection(int x, int y, int w, int h) {
@@ -275,6 +257,14 @@ int MiniAcidDisplay::drawPageTitle(int x, int y, int w, const char* text) {
 
   gfx_.fillRect(x, y, title_w, kTitleHeight, COLOR_WHITE);
 
+  // Draw recording indicator (red square) on the left if recording
+  if (audio_recorder_ && audio_recorder_->isRecording()) {
+    int indicator_size = 6;
+    int indicator_x = x + 3;
+    int indicator_y = y + (kTitleHeight - indicator_size) / 2;
+    gfx_.fillRect(indicator_x, indicator_y, indicator_size, indicator_size, IGfxColor::Red());
+  }
+
   int text_x = x + (title_w - textWidth(gfx_, text)) / 2;
   if (text_x < x) text_x = x;
   gfx_.setTextColor(COLOR_BLACK);
@@ -310,23 +300,120 @@ void MiniAcidDisplay::drawPageHint(int x, int y) {
   gfx_.setTextColor(COLOR_WHITE);
 }
 
-bool MiniAcidDisplay::handleEvent(UIEvent event) {
-  if (event.event_type == MINIACID_KEY_DOWN && event.scancode == MINIACID_ESCAPE) {
-    if (page_index_ >= 0 && page_index_ < static_cast<int>(pages_.size()) && pages_[page_index_]) {
-      if (pages_[page_index_]->hasHelpDialog()) {
-        help_dialog_visible_ = !help_dialog_visible_;
-        update();
-        return true;
+bool MiniAcidDisplay::translateToApplicationEvent(UIEvent& event) {
+  if (event.event_type == MINIACID_KEY_DOWN) {
+    if (event.key == 'c' && (event.ctrl || event.meta)) {
+      event.event_type = MINIACID_APPLICATION_EVENT;
+      event.app_event_type = MINIACID_APP_EVENT_COPY;
+      return true;
+    } else if (event.key == 'v' && (event.ctrl || event.meta)) {
+      event.event_type = MINIACID_APPLICATION_EVENT;
+      event.app_event_type = MINIACID_APP_EVENT_PASTE;
+      return true;
+    } else if (event.key == 'x' && (event.ctrl || event.meta)) {
+      event.event_type = MINIACID_APPLICATION_EVENT;
+      event.app_event_type = MINIACID_APP_EVENT_CUT;
+      return true;
+    } else if (event.key == 'z' && (event.ctrl || event.meta)) {
+      event.event_type = MINIACID_APPLICATION_EVENT;
+      event.app_event_type = MINIACID_APP_EVENT_UNDO;
+      return true;
+    } else if (event.key == 'p' && (event.ctrl || event.meta)) {
+      event.event_type = MINIACID_APPLICATION_EVENT;
+      event.app_event_type = MINIACID_APP_EVENT_TOGGLE_SONG_MODE;
+      return true;
+    } else if (event.key == 's' && (event.ctrl || event.meta)) {
+      event.event_type = MINIACID_APPLICATION_EVENT;
+      event.app_event_type = MINIACID_APP_EVENT_SAVE_SCENE;
+      return true;
+    } else if (event.key == 'r' && (event.ctrl || event.meta)) {
+      event.event_type = MINIACID_APPLICATION_EVENT;
+      if (audio_recorder_ && audio_recorder_->isRecording()) {
+        event.app_event_type = MINIACID_APP_EVENT_STOP_RECORDING;
+      } else {
+        event.app_event_type = MINIACID_APP_EVENT_START_RECORDING;
       }
+      return true;
+    }
+  }
+  return false;
+}
+
+bool MiniAcidDisplay::handleEvent(UIEvent event) {
+  translateToApplicationEvent(event);
+
+  // handle any global application events first
+  if (event.event_type == MINIACID_APPLICATION_EVENT) {
+    switch (event.app_event_type) {
+      case MINIACID_APP_EVENT_TOGGLE_SONG_MODE:
+        mini_acid_.toggleSongMode();
+        return true;
+      case MINIACID_APP_EVENT_SAVE_SCENE:
+        mini_acid_.saveSceneAs(mini_acid_.currentSceneName());
+        return true;
+      case MINIACID_APP_EVENT_START_RECORDING:
+#if defined(ARDUINO)
+        Serial.println("Handling START_RECORDING event");
+#endif
+        if (audio_recorder_ && !audio_recorder_->isRecording()) {
+          if (audio_guard_) {
+            audio_guard_([this]() {
+              if (audio_recorder_->start(static_cast<int>(mini_acid_.sampleRate()), 1)) {
+#if defined(ARDUINO)
+                Serial.println("Recording started successfully");
+#endif
+                // Recording started successfully
+              } else {
+#if defined(ARDUINO)
+                Serial.println("Failed to start recording");
+#endif
+              }
+            });
+          }
+        }
+        return true;
+      case MINIACID_APP_EVENT_STOP_RECORDING:
+#if defined(ARDUINO)
+        Serial.println("Handling STOP_RECORDING event");
+#endif
+        if (audio_recorder_ && audio_recorder_->isRecording()) {
+          if (audio_guard_) {
+            audio_guard_([this]() {
+              audio_recorder_->stop();
+#if defined(ARDUINO)
+              Serial.println("Recording stopped");
+#endif
+            });
+          }
+        }
+        return true;
+      default:
+        break;
     }
   }
 
   if (help_dialog_visible_) {
-    if (page_index_ >= 0 && page_index_ < static_cast<int>(pages_.size()) && pages_[page_index_]) {
-      bool handled = pages_[page_index_]->handleHelpEvent(event);
+    if (help_dialog_) {
+      bool handled = help_dialog_->handleEvent(event);
       if (handled) update();
     }
     return true;
+  }
+
+  if (event.event_type == MINIACID_KEY_DOWN && event.scancode == MINIACID_ESCAPE) {
+    if (page_index_ >= 0 && page_index_ < static_cast<int>(pages_.size()) && pages_[page_index_]) {
+      auto dialog = pages_[page_index_]->getHelpDialog();
+      if (dialog) {
+        help_dialog_ = std::move(dialog);
+        help_dialog_visible_ = true;
+        help_dialog_->setExitRequestedCallback([this]() {
+          help_dialog_visible_ = false;
+          help_dialog_.reset();
+        });
+        update();
+        return true;
+      }
+    }
   }
 
   switch(event.event_type) {

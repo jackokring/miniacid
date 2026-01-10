@@ -1,6 +1,6 @@
 #include "waveform_page.h"
 
-#include "../help_dialog.h"
+#include "../help_dialog_frames.h"
 
 namespace {
 constexpr IGfxColor kWaveFadeColors[] = {
@@ -23,7 +23,13 @@ WaveformPage::WaveformPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_gua
   }
 }
 
-void WaveformPage::draw(IGfx& gfx, int x, int y, int w, int h) {
+void WaveformPage::draw(IGfx& gfx) {
+  const Rect& bounds = getBoundaries();
+  int x = bounds.x;
+  int y = bounds.y;
+  int w = bounds.w;
+  int h = bounds.h;
+
   int wave_y = y + 2;
   int wave_h = h - 2;
   if (w < 4 || wave_h < 4) return;
@@ -98,21 +104,4 @@ bool WaveformPage::handleEvent(UIEvent& ui_event) {
 const std::string & WaveformPage::getTitle() const {
   static std::string title = "WAVEFORM";
   return title;
-}
-
-void WaveformPage::drawHelpBody(IGfx& gfx, int x, int y, int w, int h) {
-  (void)gfx;
-  (void)x;
-  (void)y;
-  (void)w;
-  (void)h;
-}
-
-bool WaveformPage::handleHelpEvent(UIEvent& ui_event) {
-  (void)ui_event;
-  return false;
-}
-
-bool WaveformPage::hasHelpDialog() {
-  return false;
 }

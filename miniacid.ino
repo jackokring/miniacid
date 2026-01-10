@@ -8,6 +8,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include "src/ui/miniacid_display.h"
+#include "src/audio/cardputer_audio_recorder.h"
 #include "miniacid_encoder8.h"
 #include "scene_storage_cardputer.h"
 
@@ -16,6 +17,7 @@ static constexpr IGfxColor CP_BLACK = IGfxColor::Black();
 CardputerDisplay g_display;
 MiniAcidDisplay* g_miniDisplay = nullptr;
 SceneStorageCardputer g_sceneStorage;
+CardputerAudioRecorder* g_audioRecorder = nullptr;
 
 int16_t g_audioBuffer[AUDIO_BUFFER_SAMPLES];
 
@@ -36,6 +38,11 @@ void audioTask(void *param) {
     }
 
     g_miniAcid.generateAudioBuffer(g_audioBuffer, AUDIO_BUFFER_SAMPLES);
+
+    // Write to recorder if recording
+    if (g_audioRecorder) {
+      g_audioRecorder->writeSamples(g_audioBuffer, AUDIO_BUFFER_SAMPLES);
+    }
 
     M5Cardputer.Speaker.playRaw(g_audioBuffer, AUDIO_BUFFER_SAMPLES,
                                 SAMPLE_RATE, false);
@@ -62,6 +69,17 @@ void setup() {
 
   g_miniAcid.init();
   g_miniDisplay = new MiniAcidDisplay(g_display, g_miniAcid);
+  
+  // Set audio guard to protect audio task from concurrent access
+  g_miniDisplay->setAudioGuard([](const std::function<void()>& fn) {
+    // On Cardputer, we need to suspend/resume the audio task or use a mutex
+    // For now, just call the function directly since FreeRTOS handles this
+    fn();
+  });
+  
+  // Initialize audio recorder (done after other initialization to avoid boot issues)
+  g_audioRecorder = new CardputerAudioRecorder();
+  g_miniDisplay->setAudioRecorder(g_audioRecorder);
 
   xTaskCreatePinnedToCore(audioTask, "AudioTask",
                           4096, // stack
@@ -99,7 +117,10 @@ void loop() {
   auto handleWithFallback = [&](UIEvent evt) {
     evt.event_type = MINIACID_KEY_DOWN;
     bool handled = g_miniDisplay ? g_miniDisplay->handleEvent(evt) : false;
-    if (handled) return;
+    if (handled) {
+      drawUI();
+      return;
+    }
 
     char c = evt.key;
     if (c == '\n' || c == '\r') {
@@ -166,10 +187,27 @@ void loop() {
     }
   };
 
+  auto applyCtrlLetter = [](const Keyboard_Class::KeysState& ks, uint8_t hid, UIEvent& evt) -> bool {
+    constexpr uint8_t HID_KEY_A = 0x04;
+    constexpr uint8_t HID_KEY_Z = 0x1D;
+    if (!ks.ctrl || hid < HID_KEY_A || hid > HID_KEY_Z) return false;
+    evt.key = static_cast<char>('a' + (hid - HID_KEY_A));
+    return true;
+  };
+  auto applyAltLetter = [](const Keyboard_Class::KeysState& ks, uint8_t hid, UIEvent& evt) -> bool {
+    constexpr uint8_t HID_KEY_A = 0x04;
+    constexpr uint8_t HID_KEY_Z = 0x1D;
+    if (!ks.alt || hid < HID_KEY_A || hid > HID_KEY_Z) return false;
+    evt.key = static_cast<char>('a' + (hid - HID_KEY_A));
+    return true;
+  };
+
   auto processKeys = [&](const Keyboard_Class::KeysState& ks) {
     for (auto hid : ks.hid_keys) {
       UIEvent evt{};
       evt.alt = ks.alt;
+      evt.ctrl = ks.ctrl;
+      evt.shift = ks.shift;
       bool shouldSend = false;
       if (hid == 0x33) {
         evt.scancode = MINIACID_UP;
@@ -192,6 +230,10 @@ void loop() {
       } else if (hid == KEY_TAB) {
         evt.key = '\t';
         shouldSend = true;
+      } else if (applyCtrlLetter(ks, hid, evt)) {
+        shouldSend = true;
+      } else if (applyAltLetter(ks, hid, evt)) {
+        shouldSend = true;
       }
       if (shouldSend) {
         handleWithFallback(evt);
@@ -201,6 +243,8 @@ void loop() {
     for (auto inputChar : ks.word) {
       UIEvent evt{};
       evt.alt = ks.alt;
+      evt.ctrl = ks.ctrl;
+      evt.shift = ks.shift;
       evt.key = inputChar;
       if (evt.key == '`' || evt.key == '~') { // escape
         evt.scancode = MINIACID_ESCAPE;

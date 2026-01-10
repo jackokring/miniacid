@@ -35,6 +35,7 @@ public:
   int fontHeight() const override;
   int width() const override { return w_; }
   int height() const override { return h_; }
+  int windowScale() const { return window_scale_; }
 
 private:
   struct FontMetrics {
@@ -64,6 +65,8 @@ private:
   const GFXfont* gfx_font_ = nullptr;
   FontMetrics gfx_metrics_;
   std::vector<KnobFaceCache> knob_faces_;
+  int window_scale_ = 2;
+  SDL_Texture* render_target_ = nullptr;
 
   static void setDrawColor(SDL_Renderer* renderer, IGfxColor color);
   static void setDrawColor565(SDL_Renderer* renderer, uint16_t rgb565);

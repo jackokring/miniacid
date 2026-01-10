@@ -36,6 +36,7 @@ public:
     static constexpr IGfxColor Cyan()    { return IGfxColor(0x00FFFF); }
     static constexpr IGfxColor Magenta() { return IGfxColor(0xFF00FF); }
     static constexpr IGfxColor Gray()    { return IGfxColor(0x808080); }
+    static constexpr IGfxColor DarkGray(){ return IGfxColor(0x404040); }
     static constexpr IGfxColor Orange()  { return IGfxColor(0xFFA500); }
   static constexpr IGfxColor Purple()  { return IGfxColor(0x800080); }
 

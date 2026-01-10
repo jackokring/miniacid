@@ -101,10 +101,39 @@ struct Bank {
   PatternType patterns[kPatterns];
 };
 
+static constexpr int kBankCount = 4;
+static constexpr int kSongPatternCount = kBankCount * Bank<SynthPattern>::kPatterns;
+
+inline int clampSongPatternIndex(int idx) {
+  if (idx < -1) return -1;
+  int max = kSongPatternCount - 1;
+  if (idx > max) return max;
+  return idx;
+}
+
+inline int songPatternBank(int songPatternIdx) {
+  if (songPatternIdx < 0) return -1;
+  return songPatternIdx / Bank<SynthPattern>::kPatterns;
+}
+
+inline int songPatternIndexInBank(int songPatternIdx) {
+  if (songPatternIdx < 0) return -1;
+  return songPatternIdx % Bank<SynthPattern>::kPatterns;
+}
+
+inline int songPatternFromBank(int bankIndex, int patternIndex) {
+  if (bankIndex < 0 || patternIndex < 0) return -1;
+  if (bankIndex >= kBankCount) bankIndex = kBankCount - 1;
+  if (patternIndex >= Bank<SynthPattern>::kPatterns) {
+    patternIndex = Bank<SynthPattern>::kPatterns - 1;
+  }
+  return bankIndex * Bank<SynthPattern>::kPatterns + patternIndex;
+}
+
 struct Scene {
-  Bank<DrumPatternSet> drumBank;
-  Bank<SynthPattern> synthABank;
-  Bank<SynthPattern> synthBBank;
+  Bank<DrumPatternSet> drumBanks[kBankCount];
+  Bank<SynthPattern> synthABanks[kBankCount];
+  Bank<SynthPattern> synthBBanks[kBankCount];
   Song song;
 };
 
@@ -132,6 +161,8 @@ public:
   int synthBankIndex(int synthIdx) const;
   bool drumMute(int idx) const;
   bool synthMute(int idx) const;
+  bool synthDistortionEnabled(int idx) const;
+  bool synthDelayEnabled(int idx) const;
   const SynthParameters& synthParameters(int synthIdx) const;
   float bpm() const;
   const Song& song() const;
@@ -142,12 +173,15 @@ public:
 private:
   enum class Path {
     Root,
+    DrumBanks,
     DrumBank,
     DrumPatternSet,
     DrumVoice,
     DrumHitArray,
     DrumAccentArray,
+    SynthABanks,
     SynthABank,
+    SynthBBanks,
     SynthBBank,
     SynthPattern,
     SynthStep,
@@ -157,6 +191,8 @@ private:
     Mute,
     MuteDrums,
     MuteSynth,
+    SynthDistortion,
+    SynthDelay,
     SynthParams,
     SynthParam,
     Song,
@@ -194,6 +230,8 @@ private:
   int synthBankIndex_[2] = {0, 0};
   bool drumMute_[DrumPatternSet::kVoices] = {false, false, false, false, false, false, false, false};
   bool synthMute_[2] = {false, false};
+  bool synthDistortion_[2] = {false, false};
+  bool synthDelay_[2] = {false, false};
   SynthParameters synthParameters_[2];
   float bpm_ = 100.0f;
   Song song_;
@@ -236,6 +274,10 @@ public:
   bool getDrumMute(int voiceIdx) const;
   void setSynthMute(int synthIdx, bool mute);
   bool getSynthMute(int synthIdx) const;
+  void setSynthDistortionEnabled(int synthIdx, bool enabled);
+  bool getSynthDistortionEnabled(int synthIdx) const;
+  void setSynthDelayEnabled(int synthIdx, bool enabled);
+  bool getSynthDelayEnabled(int synthIdx) const;
   void setSynthParameters(int synthIdx, const SynthParameters& params);
   const SynthParameters& getSynthParameters(int synthIdx) const;
   void setBpm(float bpm);
@@ -264,6 +306,7 @@ public:
 
 private:
   int clampPatternIndex(int idx) const;
+  int clampBankIndex(int idx) const;
   int clampSynthIndex(int idx) const;
   int clampSongPosition(int position) const;
   int clampSongLength(int length) const;
@@ -281,6 +324,8 @@ private:
   int synthBankIndex_[2] = {0, 0};
   bool drumMute_[DrumPatternSet::kVoices] = {false, false, false, false, false, false, false, false};
   bool synthMute_[2] = {false, false};
+  bool synthDistortion_[2] = {false, false};
+  bool synthDelay_[2] = {false, false};
   SynthParameters synthParameters_[2];
   float bpm_ = 100.0f;
   bool songMode_ = false;
@@ -367,6 +412,14 @@ bool SceneManager::writeSceneJson(TWriter&& writer) const {
     }
     return writeChar(']');
   };
+  auto writeDrumBanks = [&](const Bank<DrumPatternSet>* banks) -> bool {
+    if (!writeChar('[')) return false;
+    for (int b = 0; b < kBankCount; ++b) {
+      if (b > 0 && !writeChar(',')) return false;
+      if (!writeDrumBank(banks[b])) return false;
+    }
+    return writeChar(']');
+  };
   auto writeSynthPattern = [&](const SynthPattern& pattern) -> bool {
     if (!writeChar('[')) return false;
     for (int i = 0; i < SynthPattern::kSteps; ++i) {
@@ -389,17 +442,25 @@ bool SceneManager::writeSceneJson(TWriter&& writer) const {
     }
     return writeChar(']');
   };
+  auto writeSynthBanks = [&](const Bank<SynthPattern>* banks) -> bool {
+    if (!writeChar('[')) return false;
+    for (int b = 0; b < kBankCount; ++b) {
+      if (b > 0 && !writeChar(',')) return false;
+      if (!writeSynthBank(banks[b])) return false;
+    }
+    return writeChar(']');
+  };
 
   if (!writeChar('{')) return false;
 
-  if (!writeLiteral("\"drumBank\":")) return false;
-  if (!writeDrumBank(scene_.drumBank)) return false;
+  if (!writeLiteral("\"drumBanks\":")) return false;
+  if (!writeDrumBanks(scene_.drumBanks)) return false;
 
-  if (!writeLiteral(",\"synthABank\":")) return false;
-  if (!writeSynthBank(scene_.synthABank)) return false;
+  if (!writeLiteral(",\"synthABanks\":")) return false;
+  if (!writeSynthBanks(scene_.synthABanks)) return false;
 
-  if (!writeLiteral(",\"synthBBank\":")) return false;
-  if (!writeSynthBank(scene_.synthBBank)) return false;
+  if (!writeLiteral(",\"synthBBanks\":")) return false;
+  if (!writeSynthBanks(scene_.synthBBanks)) return false;
 
   if (!writeLiteral(",\"song\":{")) return false;
   int songLen = songLength();
@@ -463,6 +524,16 @@ bool SceneManager::writeSceneJson(TWriter&& writer) const {
     if (!writeInt(synthParameters_[i].oscType)) return false;
     if (!writeChar('}')) return false;
   }
+  if (!writeChar(']')) return false;
+  if (!writeLiteral(",\"synthDistortion\":[")) return false;
+  if (!writeBool(synthDistortion_[0])) return false;
+  if (!writeChar(',')) return false;
+  if (!writeBool(synthDistortion_[1])) return false;
+  if (!writeChar(']')) return false;
+  if (!writeLiteral(",\"synthDelay\":[")) return false;
+  if (!writeBool(synthDelay_[0])) return false;
+  if (!writeChar(',')) return false;
+  if (!writeBool(synthDelay_[1])) return false;
   if (!writeChar(']')) return false;
   if (!writeChar('}')) return false;
 
