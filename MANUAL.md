@@ -304,6 +304,10 @@ The drum sequencer features 8 drum voices arranged in a grid:
 - **ENTER** - Toggle drum hit on/off at current step
 - Active hits shown as filled squares
 
+**Toggle Accent**:
+- **W** - Toggle accent on/off at current step
+- Accents shown as a thin bar above each step (affects all drum voices on that step)
+
 **Load Pattern**:
 - Navigate to pattern row (top of grid)
 - Press **ENTER** to load selected pattern
@@ -311,6 +315,7 @@ The drum sequencer features 8 drum voices arranged in a grid:
 ### Mouse Control (Desktop/Web)
 
 - **Click on grid cells** to toggle drum hits
+- **Click on accent lane** to toggle accents
 - **Click pattern slots** to switch patterns
 - Visual feedback on hover
 
@@ -554,6 +559,12 @@ MiniAcid can record your sessions to WAV audio files. Recording captures the mas
 | **Z** | Note -1 semitone |
 | **S** | Octave up |
 | **X** | Octave down |
+
+### Drum Step Editing (when grid focused)
+
+| Key | Action |
+|-----|--------|
+| **W** | Toggle accent |
 
 ### Song Mode (on Song page)
 

@@ -151,6 +151,7 @@ inline void drawHelpPage303PatternEdit(IGfx& gfx, int x, int y, int w, int h) {
 inline void drawHelpPageDrumPatternEdit(IGfx& gfx, int x, int y, int w, int h) {
   HelpLayout layout = makeHelpLayout(gfx, x, y, w, h);
   int left_y = layout.left_y;
+  int right_y = layout.right_y;
   int lh = layout.line_h;
 
   drawHelpHeading(gfx, layout.left_x, left_y, "Drums Pattern Edit");
@@ -167,6 +168,12 @@ inline void drawHelpPageDrumPatternEdit(IGfx& gfx, int x, int y, int w, int h) {
   drawHelpHeading(gfx, layout.left_x, left_y, "Patterns");
   left_y += lh;
   drawHelpItem(gfx, layout.left_x, left_y, "Q..I", "Select drum pattern 1-8", COLOR_PATTERN_SELECTED_FILL);
+
+  drawHelpHeading(gfx, layout.right_x, right_y, "Step edits");
+  right_y += lh;
+  drawHelpItem(gfx, layout.right_x, right_y, "ENTER", "Toggle hit", IGfxColor::Green());
+  right_y += lh;
+  drawHelpItem(gfx, layout.right_x, right_y, "W", "Toggle accent", COLOR_ACCENT);
 }
 
 inline void drawHelpPageSong(IGfx& gfx, int x, int y, int w, int h) {

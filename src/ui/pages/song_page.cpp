@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "../help_dialog_frames.h"
+#include "../components/mode_button.h"
 
 namespace {
 struct SongPatternClipboard {
@@ -296,6 +297,16 @@ bool SongPage::toggleSongMode() {
   return true;
 }
 
+void SongPage::initModeButton(int x, int y, int w, int h) {
+  auto button = std::make_shared<ModeButton>(
+    [this]() { return mini_acid_.songModeEnabled(); },
+    [this]() { toggleSongMode(); }
+  );
+  button->setBoundaries(Rect(x, y, w, h));
+  mode_button_container_.addChild(button);
+  mode_button_initialized_ = true;
+}
+
 void SongPage::setScrollToPlayhead(int playhead) {
   if (playhead < 0) playhead = 0;
   int rowHeight = gfx_.fontHeight() + 6;
@@ -310,6 +321,11 @@ void SongPage::setScrollToPlayhead(int playhead) {
 }
 
 bool SongPage::handleEvent(UIEvent& ui_event) {
+  // Handle mode button clicks
+  if (mode_button_initialized_ && mode_button_container_.handleEvent(ui_event)) {
+    return true;
+  }
+
   if (ui_event.event_type == MINIACID_APPLICATION_EVENT) {
     bool trackValid = false;
     SongTrack track = trackForColumn(cursorTrack(), trackValid);
@@ -651,19 +667,15 @@ void SongPage::draw(IGfx& gfx) {
   }
   gfx.drawText(lenX, body_y, lenBuf);
 
-  bool songMode = mini_acid_.songModeEnabled();
-  IGfxColor modeColor = songMode ? IGfxColor::Green() : IGfxColor::Blue();
   int modeX = x + w - modeBtnW;
   int modeY = body_y - 2 + 30;
   int modeH = header_h + row_h;
-  gfx.fillRect(modeX, modeY, modeBtnW - 2, modeH, COLOR_PANEL);
-  gfx.drawRect(modeX, modeY, modeBtnW - 2, modeH, modeColor);
-  char modeLabel[32];
-  snprintf(modeLabel, sizeof(modeLabel), "MODE:%s", songMode ? "SONG" : "PAT");
-  int twMode = textWidth(gfx, modeLabel);
-  gfx.setTextColor(modeColor);
-  gfx.drawText(modeX + (modeBtnW - twMode) / 2, modeY + modeH / 2 - label_h / 2, modeLabel);
-  gfx.setTextColor(COLOR_WHITE);
+  
+  if (!mode_button_initialized_) {
+    initModeButton(modeX, modeY, modeBtnW - 2, modeH);
+  }
+  mode_button_container_.draw(gfx);
+  
   bool modeSelected = cursorOnModeButton();
   if (modeSelected) {
     gfx.drawRect(modeX - 2, modeY - 2, modeBtnW + 2, modeH + 4, COLOR_STEP_SELECTED);

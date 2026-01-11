@@ -17,6 +17,7 @@ class SongPage : public IPage, public IMultiHelpFramesProvider {
 
   void setScrollToPlayhead(int playhead);
  private:
+  void initModeButton(int x, int y, int w, int h);
   int clampCursorRow(int row) const;
   int cursorRow() const;
   int cursorTrack() const;
@@ -48,4 +49,6 @@ class SongPage : public IPage, public IMultiHelpFramesProvider {
   bool has_selection_;
   int selection_start_row_;
   int selection_start_track_;
+  Container mode_button_container_;
+  bool mode_button_initialized_ = false;
 };

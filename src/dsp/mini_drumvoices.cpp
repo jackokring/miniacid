@@ -16,6 +16,10 @@ void DrumSynthVoice::reset() {
   kickEnvAmp = 0.0f;
   kickEnvPitch = 0.0f;
   kickActive = false;
+  kickAccentGain = 1.0f;
+  kickAccentDistortion = false;
+  kickAmpDecay = 0.9995f;
+  kickBaseFreq = 42.0f;
 
   snareEnvAmp = 0.0f;
   snareToneEnv = 0.0f;
@@ -24,6 +28,9 @@ void DrumSynthVoice::reset() {
   snareLp = 0.0f;
   snareTonePhase = 0.0f;
   snareTonePhase2 = 0.0f;
+  snareAccentGain = 1.0f;
+  snareToneGain = 1.0f;
+  snareAccentDistortion = false;
 
   hatEnvAmp = 0.0f;
   hatToneEnv = 0.0f;
@@ -32,6 +39,9 @@ void DrumSynthVoice::reset() {
   hatPrev = 0.0f;
   hatPhaseA = 0.0f;
   hatPhaseB = 0.0f;
+  hatAccentGain = 1.0f;
+  hatBrightness = 1.0f;
+  hatAccentDistortion = false;
 
   openHatEnvAmp = 0.0f;
   openHatToneEnv = 0.0f;
@@ -40,24 +50,38 @@ void DrumSynthVoice::reset() {
   openHatPrev = 0.0f;
   openHatPhaseA = 0.0f;
   openHatPhaseB = 0.0f;
+  openHatAccentGain = 1.0f;
+  openHatBrightness = 1.0f;
+  openHatAccentDistortion = false;
 
   midTomPhase = 0.0f;
   midTomEnv = 0.0f;
   midTomActive = false;
+  midTomAccentGain = 1.0f;
+  midTomAccentDistortion = false;
 
   highTomPhase = 0.0f;
   highTomEnv = 0.0f;
   highTomActive = false;
+  highTomAccentGain = 1.0f;
+  highTomAccentDistortion = false;
 
   rimPhase = 0.0f;
   rimEnv = 0.0f;
   rimActive = false;
+  rimAccentGain = 1.0f;
+  rimAccentDistortion = false;
 
   clapEnv = 0.0f;
   clapTrans = 0.0f;
   clapNoise = 0.0f;
   clapActive = false;
   clapDelay = 0.0f;
+  clapAccentGain = 1.0f;
+  clapAccentDistortion = false;
+
+  accentDistortion.setEnabled(true);
+  accentDistortion.setDrive(3.0f);
 
   params[static_cast<int>(DrumParamId::MainVolume)] = Parameter("vol", "", 0.0f, 1.0f, 0.8f, 1.0f / 128);
 }
@@ -68,68 +92,96 @@ void DrumSynthVoice::setSampleRate(float sampleRateHz) {
   invSampleRate = 1.0f / sampleRate;
 }
 
-void DrumSynthVoice::triggerKick() {
+void DrumSynthVoice::triggerKick(bool accent) {
   kickActive = true;
   kickPhase = 0.0f;
-  kickEnvAmp = 1.2f;
+  kickEnvAmp = accent ? 1.4f : 1.2f;
   kickEnvPitch = 1.0f;
   kickFreq = 55.0f;
+  kickAccentGain = accent ? 1.15f : 1.0f;
+  kickAccentDistortion = accent;
+  kickAmpDecay = accent ? 0.99965f : 0.9995f;
+  kickBaseFreq = accent ? 36.0f : 42.0f;
 }
 
-void DrumSynthVoice::triggerSnare() {
+void DrumSynthVoice::triggerSnare(bool accent) {
   snareActive = true;
-  snareEnvAmp = 1.1f;
-  snareToneEnv = 1.0f;
+  snareEnvAmp = accent ? 1.4f : 1.0f;
+  snareToneEnv = accent ? 1.35f : 1.0f;
   snareTonePhase = 0.0f;
   snareTonePhase2 = 0.0f;
+  snareAccentGain = accent ? 1.15f : 1.0f;
+  snareToneGain = accent ? 1.2f : 1.0f;
+  snareAccentDistortion = accent;
 }
 
-void DrumSynthVoice::triggerHat() {
+void DrumSynthVoice::triggerHat(bool accent) {
   hatActive = true;
-  hatEnvAmp = 0.7f;
+  hatEnvAmp = accent ? 0.7f : 0.5f;
   hatToneEnv = 1.0f;
   hatPhaseA = 0.0f;
   hatPhaseB = 0.25f;
+  hatAccentGain = accent ? 1.4f : 1.0f;
+  hatBrightness = accent ? 1.45f : 1.0f;
+  hatAccentDistortion = accent;
   // closing the hat chokes any ringing open-hat tail
   openHatEnvAmp *= 0.3f;
 }
 
-void DrumSynthVoice::triggerOpenHat() {
+void DrumSynthVoice::triggerOpenHat(bool accent) {
   openHatActive = true;
-  openHatEnvAmp = 0.9f;
+  openHatEnvAmp = accent ? 0.999f : 0.9f;
   openHatToneEnv = 1.0f;
   openHatPhaseA = 0.0f;
   openHatPhaseB = 0.37f;
+  openHatAccentGain = accent ? 1.3f : 1.0f;
+  openHatBrightness = accent ? 1.25f : 1.0f;
+  openHatAccentDistortion = accent;
 }
 
-void DrumSynthVoice::triggerMidTom() {
+void DrumSynthVoice::triggerMidTom(bool accent) {
   midTomActive = true;
   midTomEnv = 1.0f;
   midTomPhase = 0.0f;
+  midTomAccentGain = accent ? 1.45f : 1.0f;
+  midTomAccentDistortion = accent;
 }
 
-void DrumSynthVoice::triggerHighTom() {
+void DrumSynthVoice::triggerHighTom(bool accent) {
   highTomActive = true;
   highTomEnv = 1.0f;
   highTomPhase = 0.0f;
+  highTomAccentGain = accent ? 1.45f : 1.0f;
+  highTomAccentDistortion = accent;
 }
 
-void DrumSynthVoice::triggerRim() {
+void DrumSynthVoice::triggerRim(bool accent) {
   rimActive = true;
   rimEnv = 1.0f;
   rimPhase = 0.0f;
+  rimAccentGain = accent ? 1.4f : 1.0f;
+  rimAccentDistortion = accent;
 }
 
-void DrumSynthVoice::triggerClap() {
+void DrumSynthVoice::triggerClap(bool accent) {
   clapActive = true;
   clapEnv = 1.0f;
   clapTrans = 1.0f;
   clapNoise = frand();
   clapDelay = 0.0f;
+  clapAccentGain = accent ? 1.45f : 1.0f;
+  clapAccentDistortion = accent;
 }
 
 float DrumSynthVoice::frand() {
   return (float)rand() / (float)RAND_MAX * 2.0f - 1.0f;
+}
+
+float DrumSynthVoice::applyAccentDistortion(float input, bool accent) {
+  if (!accent) {
+    return input;
+  }
+  return accentDistortion.process(input);
 }
 
 float DrumSynthVoice::processKick() {
@@ -137,7 +189,7 @@ float DrumSynthVoice::processKick() {
     return 0.0f;
 
   // Longer amp tail with faster pitch drop for a punchy thump
-  kickEnvAmp *= 0.9995f;
+  kickEnvAmp *= kickAmpDecay;
   kickEnvPitch *= 0.997f;
   if (kickEnvAmp < 0.0008f) {
     kickActive = false;
@@ -145,7 +197,7 @@ float DrumSynthVoice::processKick() {
   }
 
   float pitchFactor = kickEnvPitch * kickEnvPitch;
-  float f = 42.0f + 170.0f * pitchFactor;
+  float f = kickBaseFreq + 170.0f * pitchFactor;
   kickFreq = f;
   kickPhase += kickFreq * invSampleRate;
   if (kickPhase >= 1.0f)
@@ -155,7 +207,8 @@ float DrumSynthVoice::processKick() {
   float transient = sinf(2.0f * 3.14159265f * kickPhase * 3.0f) * pitchFactor * 0.25f;
   float driven = tanhf(body * (2.8f + 0.6f * kickEnvAmp));
 
-  return (driven * 0.85f + transient) * kickEnvAmp;
+  float out = (driven * 0.85f + transient) * kickEnvAmp * kickAccentGain;
+  return applyAccentDistortion(out, kickAccentDistortion);
 }
 
 
@@ -195,12 +248,13 @@ float DrumSynthVoice::processSnare() {
 
   float toneA = sinf(2.0f * 3.14159265f * snareTonePhase);
   float toneB = sinf(2.0f * 3.14159265f * snareTonePhase2);
-  float tone = (toneA * 0.55f + toneB * 0.45f) * snareToneEnv;
+  float tone = (toneA * 0.55f + toneB * 0.45f) * snareToneEnv * snareToneGain;
 
   // --- MIX ---
   // 808: tone only supports transient, noise dominates sustain
   float out = noiseOut * 0.75f + tone * 0.65f;
-  return out * snareEnvAmp;
+  out *= snareEnvAmp * snareAccentGain;
+  return applyAccentDistortion(out, snareAccentDistortion);
 }
 
 float DrumSynthVoice::processHat() {
@@ -228,10 +282,12 @@ float DrumSynthVoice::processHat() {
   hatPhaseB += 7400.0f * invSampleRate;
   if (hatPhaseB >= 1.0f)
     hatPhaseB -= 1.0f;
-  float tone = (sinf(2.0f * 3.14159265f * hatPhaseA) + sinf(2.0f * 3.14159265f * hatPhaseB)) * 0.5f * hatToneEnv;
+  float tone = (sinf(2.0f * 3.14159265f * hatPhaseA) + sinf(2.0f * 3.14159265f * hatPhaseB)) *
+               0.5f * hatToneEnv * hatBrightness;
 
   float out = hatHp * 0.65f + tone * 0.7f;
-  return out * hatEnvAmp * 0.6f;
+  out *= hatEnvAmp * 0.6f * hatAccentGain;
+  return applyAccentDistortion(out, hatAccentDistortion);
 }
 
 float DrumSynthVoice::processOpenHat() {
@@ -256,10 +312,13 @@ float DrumSynthVoice::processOpenHat() {
   openHatPhaseB += 6600.0f * invSampleRate;
   if (openHatPhaseB >= 1.0f)
     openHatPhaseB -= 1.0f;
-  float tone = (sinf(2.0f * 3.14159265f * openHatPhaseA) + sinf(2.0f * 3.14159265f * openHatPhaseB)) * 0.5f * openHatToneEnv;
+  float tone =
+    (sinf(2.0f * 3.14159265f * openHatPhaseA) + sinf(2.0f * 3.14159265f * openHatPhaseB)) *
+    0.5f * openHatToneEnv * openHatBrightness;
 
   float out = openHatHp * 0.55f + tone * 0.95f;
-  return out * openHatEnvAmp * 0.7f;
+  out *= openHatEnvAmp * 0.7f * openHatAccentGain;
+  return applyAccentDistortion(out, openHatAccentDistortion);
 }
 
 float DrumSynthVoice::processMidTom() {
@@ -279,7 +338,8 @@ float DrumSynthVoice::processMidTom() {
 
   float tone = sinf(2.0f * 3.14159265f * midTomPhase);
   float slightNoise = frand() * 0.05f;
-  return (tone * 0.9f + slightNoise) * midTomEnv * 0.8f;
+  float out = (tone * 0.9f + slightNoise) * midTomEnv * 0.8f * midTomAccentGain;
+  return applyAccentDistortion(out, midTomAccentDistortion);
 }
 
 float DrumSynthVoice::processHighTom() {
@@ -300,7 +360,8 @@ float DrumSynthVoice::processHighTom() {
 
   float tone = sinf(2.0f * 3.14159265f * highTomPhase);
   float slightNoise = frand() * 0.04f;
-  return (tone * 0.88f + slightNoise) * highTomEnv * 0.75f;
+  float out = (tone * 0.88f + slightNoise) * highTomEnv * 0.75f * highTomAccentGain;
+  return applyAccentDistortion(out, highTomAccentDistortion);
 }
 
 float DrumSynthVoice::processRim() {
@@ -318,7 +379,8 @@ float DrumSynthVoice::processRim() {
     rimPhase -= 1.0f;
   float tone = sinf(2.0f * 3.14159265f * rimPhase);
   float click = (frand() * 0.6f + 0.4f) * rimEnv;
-  return (tone * 0.5f + click) * rimEnv * 0.8f;
+  float out = (tone * 0.5f + click) * rimEnv * 0.8f * rimAccentGain;
+  return applyAccentDistortion(out, rimAccentDistortion);
 }
 
 float DrumSynthVoice::processClap() {
@@ -342,7 +404,8 @@ float DrumSynthVoice::processClap() {
   float noise = frand() * 0.7f + clapNoise * 0.3f;
   float tone = sinf(2.0f * 3.14159265f * 1100.0f * clapDelay);
   float out = (noise * 0.7f + tone * 0.3f) * clapTrans * burst;
-  return out * clapEnv;
+  out *= clapEnv * clapAccentGain;
+  return applyAccentDistortion(out, clapAccentDistortion);
 }
 
 const Parameter& DrumSynthVoice::parameter(DrumParamId id) const {
@@ -352,4 +415,3 @@ const Parameter& DrumSynthVoice::parameter(DrumParamId id) const {
 void DrumSynthVoice::setParameter(DrumParamId id, float value) {
   params[static_cast<int>(id)].setValue(value);
 }
-

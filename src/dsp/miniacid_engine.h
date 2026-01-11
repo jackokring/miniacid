@@ -9,6 +9,7 @@
 #include "scenes.h"
 #include "mini_tb303.h"
 #include "mini_drumvoices.h"
+#include "tube_distortion.h"
 
 // ===================== Audio config =====================
 
@@ -49,22 +50,6 @@ private:
   float feedback; // feedback 0..1
   bool enabled;
 };
-
-class TubeDistortion {
-public:
-  TubeDistortion();
-  void setDrive(float drive);
-  void setMix(float mix);
-  void setEnabled(bool on);
-  bool isEnabled() const;
-  float process(float input);
-
-private:
-  float drive_;
-  float mix_;
-  bool enabled_;
-};
-
 
 enum class MiniAcidParamId : uint8_t {
   MainVolume = 0,
@@ -114,6 +99,15 @@ public:
   const bool* patternHighTomSteps() const;
   const bool* patternRimSteps() const;
   const bool* patternClapSteps() const;
+  const bool* patternDrumAccentSteps() const;
+  const bool* patternKickAccentSteps() const;
+  const bool* patternSnareAccentSteps() const;
+  const bool* patternHatAccentSteps() const;
+  const bool* patternOpenHatAccentSteps() const;
+  const bool* patternMidTomAccentSteps() const;
+  const bool* patternHighTomAccentSteps() const;
+  const bool* patternRimAccentSteps() const;
+  const bool* patternClapAccentSteps() const;
   bool songModeEnabled() const;
   void setSongMode(bool enabled);
   void toggleSongMode();
@@ -158,6 +152,8 @@ public:
   void toggle303AccentStep(int voiceIndex, int stepIndex);
   void toggle303SlideStep(int voiceIndex, int stepIndex);
   void toggleDrumStep(int voiceIndex, int stepIndex);
+  void toggleDrumAccentStep(int stepIndex);
+  void setDrumAccentStep(int voiceIndex, int stepIndex, bool accent);
 
   void randomize303Pattern(int voiceIndex = 0);
   void randomizeDrumPattern();
@@ -200,6 +196,8 @@ private:
   mutable bool synthAccentCache_[NUM_303_VOICES][SEQ_STEPS];
   mutable bool synthSlideCache_[NUM_303_VOICES][SEQ_STEPS];
   mutable bool drumHitCache_[NUM_DRUM_VOICES][SEQ_STEPS];
+  mutable bool drumAccentCache_[NUM_DRUM_VOICES][SEQ_STEPS];
+  mutable bool drumStepAccentCache_[SEQ_STEPS];
 
   volatile bool playing;
   volatile bool mute303;

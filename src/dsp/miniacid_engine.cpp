@@ -136,42 +136,6 @@ float TempoDelay::process(float input) {
   return input + delayed * mix;
 }
 
-TubeDistortion::TubeDistortion()
-  : drive_(8.0f),
-    mix_(1.0f),
-    enabled_(false) {}
-
-void TubeDistortion::setDrive(float drive) {
-  if (drive < 0.1f)
-    drive = 0.1f;
-  if (drive > 10.0f)
-    drive = 10.0f;
-  drive_ = drive;
-}
-
-void TubeDistortion::setMix(float mix) {
-  if (mix < 0.0f)
-    mix = 0.0f;
-  if (mix > 1.0f)
-    mix = 1.0f;
-  mix_ = mix;
-}
-
-void TubeDistortion::setEnabled(bool on) { enabled_ = on; }
-
-bool TubeDistortion::isEnabled() const { return enabled_; }
-
-float TubeDistortion::process(float input) {
-  if (!enabled_) {
-    return input;
-  }
-  float driven = input * drive_;
-  float shaped = driven / (1.0f + fabsf(driven));
-  float comp = 1.0f / (1.0f + 0.3f * drive_); // simple loudness trim
-  shaped *= comp;
-  return input * (1.0f - mix_) + shaped * mix_;
-}
-
 MiniAcid::MiniAcid(float sampleRate, SceneStorage* sceneStorage)
   : voice303(sampleRate),
     voice3032(sampleRate),
@@ -405,6 +369,54 @@ const bool* MiniAcid::patternClapSteps() const {
   refreshDrumCache(kDrumClapVoice);
   return drumHitCache_[kDrumClapVoice];
 }
+const bool* MiniAcid::patternDrumAccentSteps() const {
+  int pat = songPatternIndexForTrack(SongTrack::Drums);
+  const DrumPatternSet& set = pat >= 0 ? sceneManager_.getDrumPatternSet(pat)
+                                       : kEmptyDrumPatternSet;
+  for (int i = 0; i < SEQ_STEPS; ++i) {
+    bool accent = false;
+    for (int v = 0; v < DrumPatternSet::kVoices; ++v) {
+      if (set.voices[v].steps[i].accent) {
+        accent = true;
+        break;
+      }
+    }
+    drumStepAccentCache_[i] = accent;
+  }
+  return drumStepAccentCache_;
+}
+const bool* MiniAcid::patternKickAccentSteps() const {
+  refreshDrumCache(kDrumKickVoice);
+  return drumAccentCache_[kDrumKickVoice];
+}
+const bool* MiniAcid::patternSnareAccentSteps() const {
+  refreshDrumCache(kDrumSnareVoice);
+  return drumAccentCache_[kDrumSnareVoice];
+}
+const bool* MiniAcid::patternHatAccentSteps() const {
+  refreshDrumCache(kDrumHatVoice);
+  return drumAccentCache_[kDrumHatVoice];
+}
+const bool* MiniAcid::patternOpenHatAccentSteps() const {
+  refreshDrumCache(kDrumOpenHatVoice);
+  return drumAccentCache_[kDrumOpenHatVoice];
+}
+const bool* MiniAcid::patternMidTomAccentSteps() const {
+  refreshDrumCache(kDrumMidTomVoice);
+  return drumAccentCache_[kDrumMidTomVoice];
+}
+const bool* MiniAcid::patternHighTomAccentSteps() const {
+  refreshDrumCache(kDrumHighTomVoice);
+  return drumAccentCache_[kDrumHighTomVoice];
+}
+const bool* MiniAcid::patternRimAccentSteps() const {
+  refreshDrumCache(kDrumRimVoice);
+  return drumAccentCache_[kDrumRimVoice];
+}
+const bool* MiniAcid::patternClapAccentSteps() const {
+  refreshDrumCache(kDrumClapVoice);
+  return drumAccentCache_[kDrumClapVoice];
+}
 
 bool MiniAcid::songModeEnabled() const { return songMode_; }
 
@@ -626,7 +638,33 @@ void MiniAcid::toggleDrumStep(int voiceIndex, int stepIndex) {
   if (step >= DrumPattern::kSteps) step = DrumPattern::kSteps - 1;
   DrumPattern& pattern = editDrumPattern(voice);
   pattern.steps[step].hit = !pattern.steps[step].hit;
-  pattern.steps[step].accent = pattern.steps[step].hit;
+}
+
+void MiniAcid::toggleDrumAccentStep(int stepIndex) {
+  int step = stepIndex;
+  if (step < 0) step = 0;
+  if (step >= DrumPattern::kSteps) step = DrumPattern::kSteps - 1;
+  DrumPatternSet& patternSet = sceneManager_.editCurrentDrumPattern();
+  bool anyAccent = false;
+  for (int v = 0; v < DrumPatternSet::kVoices; ++v) {
+    if (patternSet.voices[v].steps[step].accent) {
+      anyAccent = true;
+      break;
+    }
+  }
+  bool newAccent = !anyAccent;
+  for (int v = 0; v < DrumPatternSet::kVoices; ++v) {
+    patternSet.voices[v].steps[step].accent = newAccent;
+  }
+}
+
+void MiniAcid::setDrumAccentStep(int voiceIndex, int stepIndex, bool accent) {
+  int voice = clampDrumVoice(voiceIndex);
+  int step = stepIndex;
+  if (step < 0) step = 0;
+  if (step >= DrumPattern::kSteps) step = DrumPattern::kSteps - 1;
+  DrumPattern& pattern = editDrumPattern(voice);
+  pattern.steps[step].accent = accent;
 }
 
 int MiniAcid::clamp303Voice(int voiceIndex) const {
@@ -785,6 +823,7 @@ void MiniAcid::refreshDrumCache(int drumVoiceIndex) const {
   const DrumPattern& pattern = activeDrumPattern(idx);
   for (int i = 0; i < SEQ_STEPS; ++i) {
     drumHitCache_[idx][i] = pattern.steps[i].hit;
+    drumAccentCache_[idx][i] = pattern.steps[i].accent && pattern.steps[i].hit;
   }
 }
 
@@ -848,23 +887,32 @@ void MiniAcid::advanceStep() {
   const DrumPattern& clap = activeDrumPattern(kDrumClapVoice);
 
   bool drumsActive = songPatternDrums >= 0;
+  bool stepAccent =
+    kick.steps[currentStepIndex].accent ||
+    snare.steps[currentStepIndex].accent ||
+    hat.steps[currentStepIndex].accent ||
+    openHat.steps[currentStepIndex].accent ||
+    midTom.steps[currentStepIndex].accent ||
+    highTom.steps[currentStepIndex].accent ||
+    rim.steps[currentStepIndex].accent ||
+    clap.steps[currentStepIndex].accent;
 
   if (kick.steps[currentStepIndex].hit && !muteKick && drumsActive)
-    drums.triggerKick();
+    drums.triggerKick(stepAccent);
   if (snare.steps[currentStepIndex].hit && !muteSnare && drumsActive)
-    drums.triggerSnare();
+    drums.triggerSnare(stepAccent);
   if (hat.steps[currentStepIndex].hit && !muteHat && drumsActive)
-    drums.triggerHat();
+    drums.triggerHat(stepAccent);
   if (openHat.steps[currentStepIndex].hit && !muteOpenHat && drumsActive)
-    drums.triggerOpenHat();
+    drums.triggerOpenHat(stepAccent);
   if (midTom.steps[currentStepIndex].hit && !muteMidTom && drumsActive)
-    drums.triggerMidTom();
+    drums.triggerMidTom(stepAccent);
   if (highTom.steps[currentStepIndex].hit && !muteHighTom && drumsActive)
-    drums.triggerHighTom();
+    drums.triggerHighTom(stepAccent);
   if (rim.steps[currentStepIndex].hit && !muteRim && drumsActive)
-    drums.triggerRim();
+    drums.triggerRim(stepAccent);
   if (clap.steps[currentStepIndex].hit && !muteClap && drumsActive)
-    drums.triggerClap();
+    drums.triggerClap(stepAccent);
 }
 
 void MiniAcid::generateAudioBuffer(int16_t *buffer, size_t numSamples) {
@@ -1153,7 +1201,8 @@ void PatternGenerator::generateRandomDrumPattern(DrumPatternSet& patternSet) {
       } else {
         patternSet.voices[kDrumKickVoice].steps[i].hit = false;
       }
-      patternSet.voices[kDrumKickVoice].steps[i].accent = patternSet.voices[kDrumKickVoice].steps[i].hit;
+      patternSet.voices[kDrumKickVoice].steps[i].accent =
+        patternSet.voices[kDrumKickVoice].steps[i].hit && (rand() % 100) < 35;
     }
 
     if (drumVoiceCount > kDrumSnareVoice) {
@@ -1162,7 +1211,8 @@ void PatternGenerator::generateRandomDrumPattern(DrumPatternSet& patternSet) {
       } else {
         patternSet.voices[kDrumSnareVoice].steps[i].hit = false;
       }
-      patternSet.voices[kDrumSnareVoice].steps[i].accent = patternSet.voices[kDrumSnareVoice].steps[i].hit;
+      patternSet.voices[kDrumSnareVoice].steps[i].accent =
+        patternSet.voices[kDrumSnareVoice].steps[i].hit && (rand() % 100) < 30;
     }
 
     bool hatVal = false;
@@ -1173,14 +1223,14 @@ void PatternGenerator::generateRandomDrumPattern(DrumPatternSet& patternSet) {
         hatVal = false;
       }
       patternSet.voices[kDrumHatVoice].steps[i].hit = hatVal;
-      patternSet.voices[kDrumHatVoice].steps[i].accent = hatVal;
+      patternSet.voices[kDrumHatVoice].steps[i].accent = hatVal && (rand() % 100) < 20;
     }
 
     bool openVal = false;
     if (drumVoiceCount > kDrumOpenHatVoice) {
       openVal = (i % 4 == 3 && (rand() % 100) < 65) || ((rand() % 100) < 20 && hatVal);
       patternSet.voices[kDrumOpenHatVoice].steps[i].hit = openVal;
-      patternSet.voices[kDrumOpenHatVoice].steps[i].accent = openVal;
+      patternSet.voices[kDrumOpenHatVoice].steps[i].accent = openVal && (rand() % 100) < 25;
       if (openVal && drumVoiceCount > kDrumHatVoice) {
         patternSet.voices[kDrumHatVoice].steps[i].hit = false;
         patternSet.voices[kDrumHatVoice].steps[i].accent = false;
@@ -1190,19 +1240,19 @@ void PatternGenerator::generateRandomDrumPattern(DrumPatternSet& patternSet) {
     if (drumVoiceCount > kDrumMidTomVoice) {
       bool midTom = (i % 8 == 4 && (rand() % 100) < 75) || ((rand() % 100) < 8);
       patternSet.voices[kDrumMidTomVoice].steps[i].hit = midTom;
-      patternSet.voices[kDrumMidTomVoice].steps[i].accent = midTom;
+      patternSet.voices[kDrumMidTomVoice].steps[i].accent = midTom && (rand() % 100) < 35;
     }
 
     if (drumVoiceCount > kDrumHighTomVoice) {
       bool highTom = (i % 8 == 6 && (rand() % 100) < 70) || ((rand() % 100) < 6);
       patternSet.voices[kDrumHighTomVoice].steps[i].hit = highTom;
-      patternSet.voices[kDrumHighTomVoice].steps[i].accent = highTom;
+      patternSet.voices[kDrumHighTomVoice].steps[i].accent = highTom && (rand() % 100) < 35;
     }
 
     if (drumVoiceCount > kDrumRimVoice) {
       bool rim = (i % 4 == 1 && (rand() % 100) < 25);
       patternSet.voices[kDrumRimVoice].steps[i].hit = rim;
-      patternSet.voices[kDrumRimVoice].steps[i].accent = rim;
+      patternSet.voices[kDrumRimVoice].steps[i].accent = rim && (rand() % 100) < 30;
     }
 
     if (drumVoiceCount > kDrumClapVoice) {
@@ -1213,7 +1263,7 @@ void PatternGenerator::generateRandomDrumPattern(DrumPatternSet& patternSet) {
         clap = (rand() % 100) < 5;
       }
       patternSet.voices[kDrumClapVoice].steps[i].hit = clap;
-      patternSet.voices[kDrumClapVoice].steps[i].accent = clap;
+      patternSet.voices[kDrumClapVoice].steps[i].accent = clap && (rand() % 100) < 30;
     }
   }
 }

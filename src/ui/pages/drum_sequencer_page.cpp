@@ -19,6 +19,7 @@ class DrumSequencerGridComponent : public Component {
  public:
   struct Callbacks {
     std::function<void(int step, int voice)> onToggle;
+    std::function<void(int step)> onToggleAccent;
     std::function<int()> cursorStep;
     std::function<int()> cursorVoice;
     std::function<bool()> gridFocused;
@@ -35,20 +36,22 @@ class DrumSequencerGridComponent : public Component {
 
     GridLayout layout{};
     if (!computeLayout(layout)) return false;
-    if (ui_event.x < layout.grid_x || ui_event.x >= layout.grid_right ||
-        ui_event.y < layout.grid_y || ui_event.y >= layout.grid_bottom) {
-      return false;
-    }
-
     int step = (ui_event.x - layout.grid_x) / layout.cell_w;
-    int voice = (ui_event.y - layout.grid_y) / layout.stripe_h;
-    if (step < 0 || step >= SEQ_STEPS || voice < 0 || voice >= NUM_DRUM_VOICES) {
+    if (step < 0 || step >= SEQ_STEPS) {
       return false;
     }
 
-    if (callbacks_.onToggle) {
-      callbacks_.onToggle(step, voice);
+    if (ui_event.y >= layout.accent_y && ui_event.y < layout.accent_bottom) {
+      if (callbacks_.onToggleAccent) {
+        callbacks_.onToggleAccent(step);
+      }
+      return true;
     }
+
+    if (ui_event.y < layout.grid_y || ui_event.y >= layout.grid_bottom) return false;
+    int voice = (ui_event.y - layout.grid_y) / layout.stripe_h;
+    if (voice < 0 || voice >= NUM_DRUM_VOICES) return false;
+    if (callbacks_.onToggle) callbacks_.onToggle(step, voice);
     return true;
   }
 
@@ -57,10 +60,10 @@ class DrumSequencerGridComponent : public Component {
     if (!computeLayout(layout)) return;
 
     const char* voiceLabels[NUM_DRUM_VOICES] = {"BD", "SD", "CH", "OH", "MT", "HT", "RS", "CP"};
-    int labelStripeH = layout.bounds_h / NUM_DRUM_VOICES;
-    if (labelStripeH < 3) labelStripeH = 3;
     for (int v = 0; v < NUM_DRUM_VOICES; ++v) {
-      int ly = layout.bounds_y + v * labelStripeH + (labelStripeH - gfx.fontHeight()) / 2;
+      int labelStripeH = layout.stripe_h;
+      if (labelStripeH < 3) labelStripeH = 3;
+      int ly = layout.grid_y + v * labelStripeH + (labelStripeH - gfx.fontHeight()) / 2;
       gfx.setTextColor(COLOR_LABEL);
       gfx.drawText(layout.bounds_x, ly, voiceLabels[v]);
     }
@@ -78,12 +81,24 @@ class DrumSequencerGridComponent : public Component {
     const bool* highTom = mini_acid_.patternHighTomSteps();
     const bool* rim = mini_acid_.patternRimSteps();
     const bool* clap = mini_acid_.patternClapSteps();
+    const bool* accentSteps = mini_acid_.patternDrumAccentSteps();
     int highlight = callbacks_.currentStep ? callbacks_.currentStep() : 0;
 
     const bool* hits[NUM_DRUM_VOICES] = {kick, snare, hat, openHat, midTom, highTom, rim, clap};
     const IGfxColor colors[NUM_DRUM_VOICES] = {COLOR_DRUM_KICK, COLOR_DRUM_SNARE, COLOR_DRUM_HAT,
                                                COLOR_DRUM_OPEN_HAT, COLOR_DRUM_MID_TOM,
                                                COLOR_DRUM_HIGH_TOM, COLOR_DRUM_RIM, COLOR_DRUM_CLAP};
+
+    for (int i = 0; i < SEQ_STEPS; ++i) {
+      int cw = layout.cell_w;
+      int cx = layout.grid_x + i * cw;
+      IGfxColor fill = accentSteps[i] ? COLOR_ACCENT : COLOR_GRAY_DARKER;
+      gfx.fillRect(cx, layout.accent_y, cw - 1, layout.accent_h, fill);
+      gfx.drawRect(cx, layout.accent_y, cw - 1, layout.accent_h, COLOR_WHITE);
+      if (highlight == i) {
+        gfx.drawRect(cx - 1, layout.accent_y - 1, cw + 1, layout.accent_h + 1, COLOR_STEP_HILIGHT);
+      }
+    }
 
     // grid cells
     for (int i = 0; i < SEQ_STEPS; ++i) {
@@ -95,6 +110,9 @@ class DrumSequencerGridComponent : public Component {
         int cy = layout.grid_y + v * layout.stripe_h;
         bool hit = hits[v][i];
         IGfxColor fill = hit ? colors[v] : COLOR_GRAY;
+        if (!hit && (i % 4 == 0)) {
+          fill = COLOR_LIGHT_GRAY;
+        }
         gfx.fillRect(cx, cy, cw - 1, ch - 1, fill);
         if (highlight == i) {
           gfx.drawRect(cx - 1, cy - 1, cw + 1, ch + 1, COLOR_STEP_HILIGHT);
@@ -120,6 +138,10 @@ class DrumSequencerGridComponent : public Component {
     int grid_bottom = 0;
     int cell_w = 0;
     int stripe_h = 0;
+    int accent_y = 0;
+    int accent_h = 0;
+    int accent_bottom = 0;
+    int accent_gap = 0;
   };
 
   bool computeLayout(GridLayout& layout) const {
@@ -139,6 +161,19 @@ class DrumSequencerGridComponent : public Component {
 
     layout.cell_w = layout.grid_w / SEQ_STEPS;
     if (layout.cell_w < 2) return false;
+    layout.accent_h = 4;
+    layout.accent_gap = 2;
+    if (layout.bounds_h < (NUM_DRUM_VOICES * 3 + layout.accent_h + layout.accent_gap)) {
+      layout.accent_h = 3;
+      layout.accent_gap = 1;
+    }
+    layout.accent_y = layout.bounds_y;
+    layout.accent_bottom = layout.accent_y + layout.accent_h;
+
+    layout.grid_y = layout.bounds_y + layout.accent_h + layout.accent_gap;
+    layout.grid_h = layout.bounds_h - (layout.accent_h + layout.accent_gap);
+    if (layout.grid_h < NUM_DRUM_VOICES * 3) return false;
+
     layout.stripe_h = layout.grid_h / NUM_DRUM_VOICES;
     if (layout.stripe_h < 3) layout.stripe_h = 3;
 
@@ -194,6 +229,11 @@ DrumSequencerPage::DrumSequencerPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard&
     drum_step_cursor_ = step;
     drum_voice_cursor_ = voice;
     withAudioGuard([&]() { mini_acid_.toggleDrumStep(voice, step); });
+  };
+  callbacks.onToggleAccent = [this](int step) {
+    focusGrid();
+    drum_step_cursor_ = step;
+    withAudioGuard([&]() { mini_acid_.toggleDrumAccentStep(step); });
   };
   callbacks.cursorStep = [this]() { return activeDrumStep(); };
   callbacks.cursorVoice = [this]() { return activeDrumVoice(); };
@@ -381,10 +421,20 @@ bool DrumSequencerPage::handleEvent(UIEvent& ui_event) {
           mini_acid_.patternRimSteps(),
           mini_acid_.patternClapSteps()
         };
+        const bool* accents[NUM_DRUM_VOICES] = {
+          mini_acid_.patternKickAccentSteps(),
+          mini_acid_.patternSnareAccentSteps(),
+          mini_acid_.patternHatAccentSteps(),
+          mini_acid_.patternOpenHatAccentSteps(),
+          mini_acid_.patternMidTomAccentSteps(),
+          mini_acid_.patternHighTomAccentSteps(),
+          mini_acid_.patternRimAccentSteps(),
+          mini_acid_.patternClapAccentSteps()
+        };
         for (int v = 0; v < NUM_DRUM_VOICES; ++v) {
           for (int i = 0; i < SEQ_STEPS; ++i) {
             g_drum_pattern_clipboard.pattern.voices[v].steps[i].hit = hits[v][i];
-            g_drum_pattern_clipboard.pattern.voices[v].steps[i].accent = hits[v][i];
+            g_drum_pattern_clipboard.pattern.voices[v].steps[i].accent = accents[v][i];
           }
         }
         g_drum_pattern_clipboard.has_pattern = true;
@@ -393,6 +443,7 @@ bool DrumSequencerPage::handleEvent(UIEvent& ui_event) {
       case MINIACID_APP_EVENT_PASTE: {
         if (!g_drum_pattern_clipboard.has_pattern) return false;
         bool current_hits[NUM_DRUM_VOICES][SEQ_STEPS];
+        bool current_accents[NUM_DRUM_VOICES][SEQ_STEPS];
         const bool* hits[NUM_DRUM_VOICES] = {
           mini_acid_.patternKickSteps(),
           mini_acid_.patternSnareSteps(),
@@ -403,17 +454,33 @@ bool DrumSequencerPage::handleEvent(UIEvent& ui_event) {
           mini_acid_.patternRimSteps(),
           mini_acid_.patternClapSteps()
         };
+        const bool* accents[NUM_DRUM_VOICES] = {
+          mini_acid_.patternKickAccentSteps(),
+          mini_acid_.patternSnareAccentSteps(),
+          mini_acid_.patternHatAccentSteps(),
+          mini_acid_.patternOpenHatAccentSteps(),
+          mini_acid_.patternMidTomAccentSteps(),
+          mini_acid_.patternHighTomAccentSteps(),
+          mini_acid_.patternRimAccentSteps(),
+          mini_acid_.patternClapAccentSteps()
+        };
         for (int v = 0; v < NUM_DRUM_VOICES; ++v) {
           for (int i = 0; i < SEQ_STEPS; ++i) {
             current_hits[v][i] = hits[v][i];
+            current_accents[v][i] = accents[v][i];
           }
         }
         const DrumPatternSet& src = g_drum_pattern_clipboard.pattern;
         withAudioGuard([&]() {
           for (int v = 0; v < NUM_DRUM_VOICES; ++v) {
             for (int i = 0; i < SEQ_STEPS; ++i) {
-              if (current_hits[v][i] != src.voices[v].steps[i].hit) {
+              bool desiredHit = src.voices[v].steps[i].hit;
+              bool desiredAccent = src.voices[v].steps[i].accent && desiredHit;
+              if (current_hits[v][i] != desiredHit) {
                 mini_acid_.toggleDrumStep(v, i);
+              }
+              if (current_accents[v][i] != desiredAccent) {
+                mini_acid_.setDrumAccentStep(v, i, desiredAccent);
               }
             }
           }
@@ -480,12 +547,29 @@ bool DrumSequencerPage::handleEvent(UIEvent& ui_event) {
   }
 
   int patternIdx = patternIndexFromKey(key);
+  bool patternKeyReserved = false;
   if (patternIdx >= 0) {
-    if (mini_acid_.songModeEnabled()) return true;
-    focusPatternRow();
-    setDrumPatternCursor(patternIdx);
-    withAudioGuard([&]() { mini_acid_.setDrumPatternIndex(patternIdx); });
-    return true;
+    char lowerKey = static_cast<char>(std::tolower(static_cast<unsigned char>(key)));
+    patternKeyReserved = (lowerKey == 'w');
+    if (!patternKeyReserved || patternRowFocused()) {
+      if (mini_acid_.songModeEnabled()) return true;
+      focusPatternRow();
+      setDrumPatternCursor(patternIdx);
+      withAudioGuard([&]() { mini_acid_.setDrumPatternIndex(patternIdx); });
+      return true;
+    }
+  }
+
+  char lowerKey = static_cast<char>(std::tolower(static_cast<unsigned char>(key)));
+  switch (lowerKey) {
+    case 'w': {
+      focusGrid();
+      int step = activeDrumStep();
+      withAudioGuard([&]() { mini_acid_.toggleDrumAccentStep(step); });
+      return true;
+    }
+    default:
+      break;
   }
 
   return false;
@@ -541,7 +625,7 @@ void DrumSequencerPage::draw(IGfx& gfx) {
   bank_bar_->draw(gfx);
 
   // labels for voices
-  int grid_top = body_y + pattern_bar_h + 6;
+  int grid_top = body_y + pattern_bar_h + 5;
   int grid_h = body_h - (grid_top - body_y);
   if (grid_h <= 0) {
     if (grid_component_) {
