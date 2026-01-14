@@ -5,6 +5,7 @@
 
 namespace {
 const char* const kOscillatorOptions[] = {"saw", "sqr", "super"};
+const char* const kFilterTypeOptions[] = {"lp1"};
 } // namespace
 
 TB303Voice::TB303Voice(float sampleRate)
@@ -175,5 +176,6 @@ void TB303Voice::initParameters() {
   params[static_cast<int>(TB303ParamId::EnvAmount)] = Parameter("env", "Hz", 0.0f, 2000.0f, 400.0f, (2000.0f - 0.0f) / 128);
   params[static_cast<int>(TB303ParamId::EnvDecay)] = Parameter("dec", "ms", 20.0f, 2200.0f, 420.0f, (2200.0f - 20.0f) / 128);
   params[static_cast<int>(TB303ParamId::Oscillator)] = Parameter("osc", "", kOscillatorOptions, 3, 0);
+  params[static_cast<int>(TB303ParamId::FilterType)] = Parameter("flt", "", kFilterTypeOptions, 1, 0);
   params[static_cast<int>(TB303ParamId::MainVolume)] = Parameter("vol", "", 0.0f, 1.0f, 0.8f, 1.0f / 128);
 }

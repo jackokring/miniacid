@@ -12,6 +12,7 @@ enum class TB303ParamId : uint8_t {
   EnvAmount,
   EnvDecay,
   Oscillator,
+  FilterType,
   MainVolume,
   Count
 };

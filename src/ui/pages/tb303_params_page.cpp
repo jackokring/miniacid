@@ -237,6 +237,8 @@ void Synth303ParamsPage::initComponents() {
       });
   osc_control_ = std::make_shared<LabelValueComponent>("OSC:", COLOR_WHITE,
                                                        IGfxColor::Cyan());
+  filter_control_ = std::make_shared<LabelValueComponent>("FLT:", COLOR_WHITE,
+                                                          IGfxColor::Cyan());
   delay_control_ = std::make_shared<LabelValueComponent>("DLY:", COLOR_WHITE,
                                                          IGfxColor::Cyan());
   distortion_control_ = std::make_shared<LabelValueComponent>("DST:", COLOR_WHITE,
@@ -247,6 +249,7 @@ void Synth303ParamsPage::initComponents() {
   addChild(env_amount_knob_);
   addChild(env_decay_knob_);
   addChild(osc_control_);
+  addChild(filter_control_);
   addChild(distortion_control_);
   addChild(delay_control_);
 
@@ -299,6 +302,12 @@ void Synth303ParamsPage::adjustFocusedElement(int direction) {
     });
     return;
   }
+  if (filter_control_ && filter_control_->isFocused()) {
+    withAudioGuard([&]() {
+      mini_acid_.adjust303Parameter(TB303ParamId::FilterType, direction, voice_index_);
+    });
+    return;
+  }
   if (delay_control_ && delay_control_->isFocused()) {
     bool enabled = mini_acid_.is303DelayEnabled(voice_index_);
     if ((direction > 0 && !enabled) || (direction < 0 && enabled)) {
@@ -347,38 +356,58 @@ void Synth303ParamsPage::draw(IGfx& gfx) {
 
   int delta_y_for_controls = 35;
   int delta_x_for_controls = -9;
+  int rowLeft = dx() + 6;
+  int labelValueGap = 2;
+  int controlGap = 8;
 
   // oscillator type control
   const Parameter& pOsc = mini_acid_.parameter303(TB303ParamId::Oscillator, voice_index_);
+  const Parameter& pFilter = mini_acid_.parameter303(TB303ParamId::FilterType, voice_index_);
 
   const char* oscLabel = pOsc.optionLabel();
   if (!oscLabel) oscLabel = "";
-  int oscLabelX = dx() + x_margin + 25;
+  int oscLabelX = rowLeft;
   int oscSwitchesY = dy() + height() - 13;
   int oscLabelW = textWidth(gfx_, "OSC:");
   int oscValueW = textWidth(gfx_, oscLabel);
   int oscValueMaxW = textWidth(gfx_, "super");
-  int oscValueX = oscLabelX + oscLabelW + 3;
+  int oscValueX = oscLabelX + oscLabelW + labelValueGap;
   if (osc_control_) {
     osc_control_->setValue(oscLabel);
-    int oscFocusW = oscLabelW + 3 + oscValueW;
+    int oscFocusW = oscLabelW + labelValueGap + oscValueW;
     int oscFocusH = gfx_.fontHeight();
     osc_control_->setBoundaries(Rect(oscLabelX, oscSwitchesY,
                                      oscFocusW, oscFocusH));
   }
 
+  // filter type control
+  const char* filterLabel = pFilter.optionLabel();
+  if (!filterLabel) filterLabel = "";
+  int filterLabelX = oscValueX + oscValueMaxW + controlGap;
+  int filterLabelW = textWidth(gfx_, "FLT:");
+  int filterValueW = textWidth(gfx_, filterLabel);
+  int filterValueMaxW = textWidth(gfx_, "lp-1");
+  int filterValueX = filterLabelX + filterLabelW + labelValueGap;
+  if (filter_control_) {
+    filter_control_->setValue(filterLabel);
+    int filterFocusW = filterLabelW + labelValueGap + filterValueW;
+    int filterFocusH = gfx_.fontHeight();
+    filter_control_->setBoundaries(Rect(filterLabelX, oscSwitchesY,
+                                        filterFocusW, filterFocusH));
+  }
+
   // distortion toggle control
   bool distortionEnabled = mini_acid_.is303DistortionEnabled(voice_index_);
-  int distLabelX = oscValueX + oscValueMaxW + 14;
+  int distLabelX = filterValueX + filterValueMaxW + controlGap;
   int distLabelW = textWidth(gfx_, "DST:");
   int distLabelMaxW = textWidth(gfx_, "off");
   const char* distortionValue = distortionEnabled ? "on" : "off";
-  int delayLabelX = distLabelX + distLabelW + 3 + distLabelMaxW + 12;
+  int delayLabelX = distLabelX + distLabelW + labelValueGap + distLabelMaxW + controlGap;
   int delayLabelW = textWidth(gfx_, "DLY:");
   if (distortion_control_) {
     distortion_control_->setValue(distortionValue);
     int distortionValueW = textWidth(gfx_, distortionValue);
-    int distortionFocusW = delayLabelW + 3 + distortionValueW;
+    int distortionFocusW = distLabelW + labelValueGap + distortionValueW;
     int distortionFocusH = gfx_.fontHeight();
     distortion_control_->setBoundaries(Rect(distLabelX, oscSwitchesY,
                                             distortionFocusW, distortionFocusH));
@@ -392,7 +421,7 @@ void Synth303ParamsPage::draw(IGfx& gfx) {
   if (delay_control_) {
     delay_control_->setValue(delayValue);
     int delayValueW = textWidth(gfx_, delayValue);
-    int delayFocusW = distLabelW + 3 + delayValueW;
+    int delayFocusW = delayLabelW + labelValueGap + delayValueW;
     int delayFocusH = gfx_.fontHeight();
     delay_control_->setBoundaries(Rect(delayLabelX, oscSwitchesY,
                                        delayFocusW, delayFocusH));

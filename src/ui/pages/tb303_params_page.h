@@ -35,6 +35,7 @@ class Synth303ParamsPage : public IPage, public IMultiHelpFramesProvider {
   std::shared_ptr<KnobComponent> env_amount_knob_;
   std::shared_ptr<KnobComponent> env_decay_knob_;
   std::shared_ptr<LabelValueComponent> osc_control_;
+  std::shared_ptr<LabelValueComponent> filter_control_;
   std::shared_ptr<LabelValueComponent> delay_control_;
   std::shared_ptr<LabelValueComponent> distortion_control_;
   std::string title_;
