@@ -59,6 +59,13 @@ void setup() {
   M5Cardputer.begin(cfg);
 
   Serial.begin(115200);
+#if defined(MINIACID_SCENE_DEBUG)
+  Serial.printf("sizeof(AutomationLane)=%u sizeof(SynthPattern)=%u sizeof(Scene)=%u\n",
+                static_cast<unsigned>(sizeof(AutomationLane)),
+                static_cast<unsigned>(sizeof(SynthPattern)),
+                static_cast<unsigned>(sizeof(Scene)));
+  Serial.printf("free heap at boot: %u\n", static_cast<unsigned>(ESP.getFreeHeap()));
+#endif
 
   g_display.setRotation(1);
   g_display.begin();
@@ -68,6 +75,9 @@ void setup() {
   M5Cardputer.Speaker.setVolume(200); // 0-255
 
   g_miniAcid.init();
+#if defined(MINIACID_SCENE_DEBUG)
+  Serial.printf("free heap after MiniAcid init: %u\n", static_cast<unsigned>(ESP.getFreeHeap()));
+#endif
   g_miniDisplay = new MiniAcidDisplay(g_display, g_miniAcid);
   
   // Set audio guard to protect audio task from concurrent access
@@ -117,74 +127,7 @@ void loop() {
   auto handleWithFallback = [&](UIEvent evt) {
     evt.event_type = MINIACID_KEY_DOWN;
     bool handled = g_miniDisplay ? g_miniDisplay->handleEvent(evt) : false;
-    if (handled) {
-      drawUI();
-      return;
-    }
-
-    char c = evt.key;
-    if (c == '\n' || c == '\r') {
-      if (g_miniDisplay) g_miniDisplay->dismissSplash();
-      drawUI();
-    } else if (c == '[') {
-      if (g_miniDisplay) g_miniDisplay->previousPage();
-      drawUI();
-    } else if (c == ']') {
-      if (g_miniDisplay) g_miniDisplay->nextPage();
-      drawUI();
-    } else if (c == 'i' || c == 'I') {
-      g_miniAcid.randomize303Pattern(0);
-      drawUI();
-    } else if (c == 'o' || c == 'O') {
-      g_miniAcid.randomize303Pattern(1);
-      drawUI();
-    } else if (c == 'p' || c == 'P') {
-      g_miniAcid.randomizeDrumPattern();
-      drawUI();
-    } else if (c == '1') {
-      g_miniAcid.toggleMute303(0);
-      drawUI();
-    } else if (c == '2') {
-      g_miniAcid.toggleMute303(1);
-      drawUI();
-    } else if (c == '3') {
-      g_miniAcid.toggleMuteKick();
-      drawUI();
-    } else if (c == '4') {
-      g_miniAcid.toggleMuteSnare();
-      drawUI();
-    } else if (c == '5') {
-      g_miniAcid.toggleMuteHat();
-      drawUI();
-    } else if (c == '6') {
-      g_miniAcid.toggleMuteOpenHat();
-      drawUI();
-    } else if (c == '7') {
-      g_miniAcid.toggleMuteMidTom();
-      drawUI();
-    } else if (c == '8') {
-      g_miniAcid.toggleMuteHighTom();
-      drawUI();
-    } else if (c == '9') {
-      g_miniAcid.toggleMuteRim();
-      drawUI();
-    } else if (c == '0') {
-      g_miniAcid.toggleMuteClap();
-      drawUI();
-    } else if (c == 'k' || c == 'K') {
-      g_miniAcid.setBpm(g_miniAcid.bpm() - 5.0f);
-      drawUI();
-    } else if (c == 'l' || c == 'L') {
-      g_miniAcid.setBpm(g_miniAcid.bpm() + 5.0f);
-      drawUI();
-    } else if (c == ' ') {
-      if (g_miniAcid.isPlaying()) {
-        g_miniAcid.stop();
-      } else {
-        g_miniAcid.start();
-      }
-      drawUI();
-    }
+    if (handled) drawUI();
   };
 
   auto applyCtrlLetter = [](const Keyboard_Class::KeysState& ks, uint8_t hid, UIEvent& evt) -> bool {
@@ -240,6 +183,11 @@ void loop() {
       }
     }
 
+    // do not send events only for ctlr/alt/shift changes
+    // so that we don't get double events when those are used as modifiers
+    if (ks.ctrl || ks.alt || ks.shift) {
+      return;
+    }
     for (auto inputChar : ks.word) {
       UIEvent evt{};
       evt.alt = ks.alt;
