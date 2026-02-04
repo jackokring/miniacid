@@ -2,15 +2,24 @@
 
 #include "../ui_core.h"
 
+struct AutomationLaneAccess {
+  std::function<const Parameter&(int param_id)> parameter;
+  std::function<const AutomationLane*(int param_id)> lane;
+  std::function<AutomationLane*(int param_id)> editLane;
+  std::function<int()> currentStep;
+  std::function<bool()> isPlaying;
+  std::function<float()> currentStepProgress;
+};
+
 class AutomationLaneEditor : public FocusableComponent {
  public:
-  AutomationLaneEditor(MiniAcid& mini_acid, AudioGuard& audio_guard, int voice_index);
+  AutomationLaneEditor(AudioGuard& audio_guard, AutomationLaneAccess access, int param_id);
 
-  void setParamId(TB303ParamId id);
-  TB303ParamId paramId() const { return param_id_; }
+  void setParamId(int id);
+  int paramId() const { return param_id_; }
 
   bool handleEvent(UIEvent& ui_event) override;
- void draw(IGfx& gfx) override;
+  void draw(IGfx& gfx) override;
 
  private:
   static constexpr int kDefaultYSteps = 32;
@@ -30,10 +39,9 @@ class AutomationLaneEditor : public FocusableComponent {
   bool removeNodeAtCursor();
   bool addNodeAtCursor();
 
-  MiniAcid& mini_acid_;
   AudioGuard& audio_guard_;
-  int voice_index_;
-  TB303ParamId param_id_;
+  AutomationLaneAccess access_;
+  int param_id_;
   int cursor_x_;
   int cursor_y_;
 };

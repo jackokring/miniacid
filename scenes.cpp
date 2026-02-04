@@ -949,6 +949,34 @@ void SceneJsonObserver::handlePrimitiveNumber(double value, bool isInteger) {
       bpm_ = static_cast<float>(value);
       return;
     }
+    if (lastKey_ == "drumVolume") {
+      drumVolume_ = static_cast<float>(value);
+      return;
+    }
+    if (lastKey_ == "drumDistortion") {
+      drumDistortion_ = static_cast<float>(value);
+      return;
+    }
+    if (lastKey_ == "drumCompression") {
+      drumCompression_ = static_cast<float>(value);
+      return;
+    }
+    if (lastKey_ == "drumTransientAttack") {
+      drumTransientAttack_ = static_cast<float>(value);
+      return;
+    }
+    if (lastKey_ == "drumTransientSustain") {
+      drumTransientSustain_ = static_cast<float>(value);
+      return;
+    }
+    if (lastKey_ == "drumReverbMix") {
+      drumReverbMix_ = static_cast<float>(value);
+      return;
+    }
+    if (lastKey_ == "drumReverbDecay") {
+      drumReverbDecay_ = static_cast<float>(value);
+      return;
+    }
     if (lastKey_ == "songPosition") {
       songPosition_ = static_cast<int>(value);
       return;
@@ -1187,6 +1215,15 @@ void SceneJsonObserver::onObjectValueEnd() {
 
 bool SceneJsonObserver::hadError() const { return error_; }
 
+const std::string& SceneJsonObserver::lastKey() const { return lastKey_; }
+
+const char* SceneJsonObserver::currentPathName() const {
+  if (stackSize_ <= 0) return "None";
+  return pathName(stack_[stackSize_ - 1].path);
+}
+
+int SceneJsonObserver::stackSize() const { return stackSize_; }
+
 int SceneJsonObserver::drumPatternIndex() const { return drumPatternIndex_; }
 
 int SceneJsonObserver::synthPatternIndex(int synthIdx) const {
@@ -1229,6 +1266,20 @@ const SynthParameters& SceneJsonObserver::synthParameters(int synthIdx) const {
 
 float SceneJsonObserver::bpm() const { return bpm_; }
 
+float SceneJsonObserver::drumVolume() const { return drumVolume_; }
+
+float SceneJsonObserver::drumDistortion() const { return drumDistortion_; }
+
+float SceneJsonObserver::drumCompression() const { return drumCompression_; }
+
+float SceneJsonObserver::drumTransientAttack() const { return drumTransientAttack_; }
+
+float SceneJsonObserver::drumTransientSustain() const { return drumTransientSustain_; }
+
+float SceneJsonObserver::drumReverbMix() const { return drumReverbMix_; }
+
+float SceneJsonObserver::drumReverbDecay() const { return drumReverbDecay_; }
+
 const Song& SceneJsonObserver::song() const { return song_; }
 
 bool SceneJsonObserver::hasSong() const { return hasSong_; }
@@ -1259,6 +1310,13 @@ void SceneManager::loadDefaultScene() {
   synthDistortion_[1] = false;
   synthDelay_[0] = false;
   synthDelay_[1] = false;
+  drumVolume_ = 1.0f;
+  drumDistortion_ = 0.0f;
+  drumCompression_ = 0.0f;
+  drumTransientAttack_ = 0.0f;
+  drumTransientSustain_ = 0.0f;
+  drumReverbMix_ = 0.0f;
+  drumReverbDecay_ = 0.3f;
   synthParameters_[0] = SynthParameters();
   synthParameters_[1] = SynthParameters();
   drumEngineName_ = "808";
@@ -1485,6 +1543,62 @@ bool SceneManager::getSynthDelayEnabled(int synthIdx) const {
   return synthDelay_[clampedSynth];
 }
 
+void SceneManager::setDrumDistortion(float value) {
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumDistortion_ = value;
+}
+
+float SceneManager::getDrumDistortion() const { return drumDistortion_; }
+
+void SceneManager::setDrumCompression(float value) {
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumCompression_ = value;
+}
+
+float SceneManager::getDrumCompression() const { return drumCompression_; }
+
+void SceneManager::setDrumVolume(float value) {
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumVolume_ = value;
+}
+
+float SceneManager::getDrumVolume() const { return drumVolume_; }
+
+void SceneManager::setDrumTransientAttack(float value) {
+  if (value < -1.0f) value = -1.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumTransientAttack_ = value;
+}
+
+float SceneManager::getDrumTransientAttack() const { return drumTransientAttack_; }
+
+void SceneManager::setDrumTransientSustain(float value) {
+  if (value < -1.0f) value = -1.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumTransientSustain_ = value;
+}
+
+float SceneManager::getDrumTransientSustain() const { return drumTransientSustain_; }
+
+void SceneManager::setDrumReverbMix(float value) {
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumReverbMix_ = value;
+}
+
+float SceneManager::getDrumReverbMix() const { return drumReverbMix_; }
+
+void SceneManager::setDrumReverbDecay(float value) {
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumReverbDecay_ = value;
+}
+
+float SceneManager::getDrumReverbDecay() const { return drumReverbDecay_; }
+
 void SceneManager::setSynthParameters(int synthIdx, const SynthParameters& params) {
   int clampedSynth = clampSynthIndex(synthIdx);
   synthParameters_[clampedSynth] = params;
@@ -1631,12 +1745,7 @@ bool SceneManager::loadScene(const std::string& json) {
 }
 
 bool SceneManager::loadSceneEventedWithReader(JsonVisitor::NextChar nextChar) {
-  std::unique_ptr<Scene> loaded(new (std::nothrow) Scene());
-  if (!loaded) {
-    SCENE_DEBUG_PRINTLN("loadSceneEventedWithReader: failed to allocate Scene");
-    return false;
-  }
-  clearSceneData(*loaded);
+  clearSceneData(scene_);
 
   struct NextCharStream {
     JsonVisitor::NextChar next;
@@ -1645,16 +1754,18 @@ bool SceneManager::loadSceneEventedWithReader(JsonVisitor::NextChar nextChar) {
 
   NextCharStream stream{std::move(nextChar)};
   JsonVisitor visitor;
-  SceneJsonObserver observer(*loaded, bpm_);
+  SceneJsonObserver observer(scene_, bpm_);
   bool parsed = visitor.parse(stream, observer);
   if (!parsed || observer.hadError()) {
-    SCENE_DEBUG_PRINTF("loadSceneEventedWithReader: parse=%s error=%s\n",
+    SCENE_DEBUG_PRINTF("loadSceneEventedWithReader: parse=%s error=%s path=%s key='%s' stack=%d\n",
                        parsed ? "true" : "false",
-                       observer.hadError() ? "true" : "false");
+                       observer.hadError() ? "true" : "false",
+                       observer.currentPathName(),
+                       observer.lastKey().c_str(),
+                       observer.stackSize());
     return false;
   }
 
-  scene_ = *loaded;
   scene_.song = observer.song();
   drumPatternIndex_ = clampPatternIndex(observer.drumPatternIndex());
   synthPatternIndex_[0] = clampPatternIndex(observer.synthPatternIndex(0));
@@ -1680,6 +1791,13 @@ bool SceneManager::loadSceneEventedWithReader(JsonVisitor::NextChar nextChar) {
   synthDistortion_[1] = observer.synthDistortionEnabled(1);
   synthDelay_[0] = observer.synthDelayEnabled(0);
   synthDelay_[1] = observer.synthDelayEnabled(1);
+  setDrumDistortion(observer.drumDistortion());
+  setDrumCompression(observer.drumCompression());
+  setDrumVolume(observer.drumVolume());
+  setDrumTransientAttack(observer.drumTransientAttack());
+  setDrumTransientSustain(observer.drumTransientSustain());
+  setDrumReverbMix(observer.drumReverbMix());
+  setDrumReverbDecay(observer.drumReverbDecay());
   synthParameters_[0] = observer.synthParameters(0);
   synthParameters_[1] = observer.synthParameters(1);
   drumEngineName_ = observer.drumEngineName();

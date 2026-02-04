@@ -1,5 +1,7 @@
 #include "automation_lane_editor.h"
 
+#include <utility>
+
 #include "../ui_colors.h"
 #include "../ui_utils.h"
 
@@ -11,15 +13,16 @@ int clampIndex(int value, int maxValue) {
 }
 }
 
-AutomationLaneEditor::AutomationLaneEditor(MiniAcid& mini_acid, AudioGuard& audio_guard, int voice_index)
-  : mini_acid_(mini_acid),
-    audio_guard_(audio_guard),
-    voice_index_(voice_index),
-    param_id_(TB303ParamId::Cutoff),
+AutomationLaneEditor::AutomationLaneEditor(AudioGuard& audio_guard,
+                                           AutomationLaneAccess access,
+                                           int param_id)
+  : audio_guard_(audio_guard),
+    access_(std::move(access)),
+    param_id_(param_id),
     cursor_x_(0),
     cursor_y_(0) {}
 
-void AutomationLaneEditor::setParamId(TB303ParamId id) {
+void AutomationLaneEditor::setParamId(int id) {
   param_id_ = id;
 }
 
@@ -55,8 +58,8 @@ void AutomationLaneEditor::setCursorFromPoint(int x, int y) {
 uint8_t AutomationLaneEditor::cursorValue() const {
   int steps_y = ySteps();
   if (steps_y <= 1) return 0;
-  const Parameter& param = mini_acid_.parameter303(param_id_, voice_index_);
-  const AutomationLane* lane = mini_acid_.automationLane303(param_id_, voice_index_);
+  const Parameter& param = access_.parameter(param_id_);
+  const AutomationLane* lane = access_.lane(param_id_);
   bool option_lane = param.hasOptions() || (lane && lane->hasOptions());
   if (option_lane) {
     return static_cast<uint8_t>(clampIndex(cursor_y_, steps_y - 1));
@@ -68,8 +71,8 @@ uint8_t AutomationLaneEditor::cursorValue() const {
 int AutomationLaneEditor::valueToYIndex(uint8_t value) const {
   int steps_y = ySteps();
   if (steps_y <= 1) return 0;
-  const Parameter& param = mini_acid_.parameter303(param_id_, voice_index_);
-  const AutomationLane* lane = mini_acid_.automationLane303(param_id_, voice_index_);
+  const Parameter& param = access_.parameter(param_id_);
+  const AutomationLane* lane = access_.lane(param_id_);
   bool option_lane = param.hasOptions() || (lane && lane->hasOptions());
   if (option_lane) {
     return clampIndex(static_cast<int>(value), steps_y - 1);
@@ -79,8 +82,8 @@ int AutomationLaneEditor::valueToYIndex(uint8_t value) const {
 }
 
 int AutomationLaneEditor::ySteps() const {
-  const Parameter& param = mini_acid_.parameter303(param_id_, voice_index_);
-  const AutomationLane* lane = mini_acid_.automationLane303(param_id_, voice_index_);
+  const Parameter& param = access_.parameter(param_id_);
+  const AutomationLane* lane = access_.lane(param_id_);
   if (param.hasOptions() || (lane && lane->hasOptions())) {
     int count = lane && lane->hasOptions() ? lane->optionCount : param.optionCount();
     if (count < 1) count = 1;
@@ -116,7 +119,7 @@ Rect AutomationLaneEditor::graphBounds() const {
 }
 
 bool AutomationLaneEditor::removeNodeAtCursor() {
-  AutomationLane* lane = mini_acid_.editAutomationLane303(param_id_, voice_index_);
+  AutomationLane* lane = access_.editLane(param_id_);
   if (!lane) return false;
   AutomationNode* nodes = lane->nodes();
   if (!nodes) return false;
@@ -140,9 +143,9 @@ bool AutomationLaneEditor::removeNodeAtCursor() {
 }
 
 bool AutomationLaneEditor::addNodeAtCursor() {
-  AutomationLane* lane = mini_acid_.editAutomationLane303(param_id_, voice_index_);
+  AutomationLane* lane = access_.editLane(param_id_);
   if (!lane) return false;
-  const Parameter& param = mini_acid_.parameter303(param_id_, voice_index_);
+  const Parameter& param = access_.parameter(param_id_);
   if ((param.hasOptions() || lane->hasOptions()) && !lane->hasOptions()) {
     int count = param.optionCount();
     if (count > kAutomationMaxOptions) count = kAutomationMaxOptions;
@@ -208,7 +211,7 @@ bool AutomationLaneEditor::handleEvent(UIEvent& ui_event) {
 
   if (ui_event.alt &&
       (ui_event.scancode == MINIACID_LEFT || ui_event.scancode == MINIACID_RIGHT)) {
-    const AutomationLane* lane = mini_acid_.automationLane303(param_id_, voice_index_);
+    const AutomationLane* lane = access_.lane(param_id_);
     const AutomationNode* nodes = lane ? lane->nodes() : nullptr;
     if (!lane || !nodes || lane->nodeCount <= 0) return false;
 
@@ -315,9 +318,9 @@ void AutomationLaneEditor::draw(IGfx& gfx) {
   gfx.drawRect(bounds.x, bounds.y, bounds.w, bounds.h,
     isFocused() ? COLOR_STEP_SELECTED : COLOR_LIGHT_GRAY);
 
-  int current_step = mini_acid_.currentStep();
-  if (mini_acid_.isPlaying() && current_step >= 0) {
-    float progress = mini_acid_.currentStepProgress();
+  int current_step = access_.currentStep();
+  if (access_.isPlaying() && current_step >= 0) {
+    float progress = access_.currentStepProgress();
     float play_pos = static_cast<float>(current_step) + progress;
     if (play_pos < 0.0f) play_pos = 0.0f;
     float max_pos = static_cast<float>(kXSteps - 1);
@@ -330,8 +333,8 @@ void AutomationLaneEditor::draw(IGfx& gfx) {
                     graph_bounds.y + graph_bounds.h - 1, COLOR_STEP_HILIGHT);
   }
 
-  const Parameter& param = mini_acid_.parameter303(param_id_, voice_index_);
-  const AutomationLane* lane = mini_acid_.automationLane303(param_id_, voice_index_);
+  const Parameter& param = access_.parameter(param_id_);
+  const AutomationLane* lane = access_.lane(param_id_);
   const AutomationNode* nodes = lane ? lane->nodes() : nullptr;
   bool option_lane = param.hasOptions() || (lane && lane->hasOptions());
   bool lane_enabled = lane && lane->enabled;

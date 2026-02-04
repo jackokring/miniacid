@@ -30,4 +30,4 @@ public:
   virtual bool setCurrentSceneName(const std::string& name) = 0;
 };
 
-#endif // SCENE_STORAGE_H
+#endif  // SCENE_STORAGE_H

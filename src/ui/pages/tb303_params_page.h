@@ -5,6 +5,8 @@
 #include "../ui_colors.h"
 #include "../ui_utils.h"
 
+class KnobComponent;
+
 class Synth303ParamsPage : public IPage, public IMultiHelpFramesProvider {
  public:
   Synth303ParamsPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_guard, int voice_index);
@@ -18,7 +20,6 @@ class Synth303ParamsPage : public IPage, public IMultiHelpFramesProvider {
   void drawHelpFrame(IGfx& gfx, int frameIndex, Rect bounds) const override;
 
  private:
-  class KnobComponent;
   class LabelValueComponent;
 
   void withAudioGuard(const std::function<void()>& fn);

@@ -21,7 +21,7 @@ DrumPatternAutomationPage::DrumPatternAutomationPage(IGfx &gfx,
     pattern_row_cursor_ = idx;
     bank_index_ = mini_acid_.currentDrumBankIndex();
     bank_cursor_ = bank_index_;
-    title_ = "DRUM PATTERNS";
+    title_ = "DRUM AUTOMATION";
     pattern_label_ = std::make_shared<LabelComponent>("PATTERNS");
     pattern_label_->setTextColor(COLOR_LABEL);
     pattern_bar_ = std::make_shared<PatternSelectionBarComponent>("PATTERNS");
@@ -68,11 +68,36 @@ DrumPatternAutomationPage::DrumPatternAutomationPage(IGfx &gfx,
         param_options.push_back(std::make_shared<DrumAutomationLaneLabel>(
             mini_acid_, param_id, label));
     };
-    addParamOption(DrumAutomationParamId::DrumEngine, "ENG");
+    addParamOption(DrumAutomationParamId::DrumEngine, "KIT");
+    addParamOption(DrumAutomationParamId::Distortion, "DIST");
+    addParamOption(DrumAutomationParamId::Compression, "COMP");
+    addParamOption(DrumAutomationParamId::TransientSustain, "SUS");
+    addParamOption(DrumAutomationParamId::ReverbMix, "RVB");
+    addParamOption(DrumAutomationParamId::ReverbDecay, "RDEC");
+    addParamOption(DrumAutomationParamId::DrumVolume, "VOL");
     combo_box_ = std::make_shared<ComboBoxComponent>(std::move(param_options));
     combo_box_->setFocusable(true);
     addChild(combo_box_);
-    automation_editor_ = std::make_shared<DrumAutomationLaneEditor>(mini_acid_, audio_guard_);
+    AutomationLaneAccess access;
+    access.parameter = [this](int param_id) -> const Parameter& {
+        return mini_acid_.drumParameter(static_cast<DrumAutomationParamId>(param_id));
+    };
+    access.lane = [this](int param_id) -> const AutomationLane* {
+        return mini_acid_.automationLaneDrum(static_cast<DrumAutomationParamId>(param_id));
+    };
+    access.editLane = [this](int param_id) -> AutomationLane* {
+        return mini_acid_.editAutomationLaneDrum(static_cast<DrumAutomationParamId>(param_id));
+    };
+    access.currentStep = [this]() { return mini_acid_.currentStep(); };
+    access.isPlaying = [this]() { return mini_acid_.isPlaying(); };
+    access.currentStepProgress = [this]() { return mini_acid_.currentStepProgress(); };
+    int initial_param_id = static_cast<int>(DrumAutomationParamId::DrumEngine);
+    if (!param_ids_.empty()) {
+        initial_param_id = static_cast<int>(param_ids_[0]);
+    }
+    automation_editor_ = std::make_shared<AutomationLaneEditor>(audio_guard_,
+                                                               std::move(access),
+                                                               initial_param_id);
     automation_editor_->setFocusable(true);
     addChild(automation_editor_);
 }
@@ -233,6 +258,24 @@ bool DrumPatternAutomationPage::handleEvent(UIEvent &ui_event)
                 }
             }
         }
+
+        // handle key up down to navigate focus on pattern or bank bar
+        // with alternate key gesture than tab / shift+tab
+        if (ui_event.scancode == MINIACID_DOWN || ui_event.scancode == MINIACID_UP) {
+            bool shouldAskToHandleVerticalArrows = focusedChild() == pattern_bar_.get() || focusedChild() == bank_bar_.get();
+            if (shouldAskToHandleVerticalArrows) {
+                auto handledByChild = focusedChild()->handleEvent(ui_event);
+                if (!handledByChild) {
+                    if (ui_event.scancode == MINIACID_DOWN) {
+                        focusNext();
+                        return true;
+                    } else if (ui_event.scancode == MINIACID_UP) {
+                        focusPrev();
+                        return true;
+                    }
+                }
+            }
+        }
     }
 
     // Let Container handle the rest (including mouse clicks and focus navigation)
@@ -316,7 +359,7 @@ void DrumPatternAutomationPage::draw(IGfx &gfx)
         if (editor_h < 0)
             editor_h = 0;
         automation_editor_->setBoundaries(Rect{editor_x, editor_y, editor_w, editor_h});
-        automation_editor_->setParamId(selectedParamId());
+        automation_editor_->setParamId(static_cast<int>(selectedParamId()));
     }
     if (combo_box_) {
         combo_box_->draw(gfx);

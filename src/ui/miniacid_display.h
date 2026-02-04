@@ -47,4 +47,5 @@ private:
   std::unique_ptr<TransportBpmHeader> transport_bpm_header_;
   std::unique_ptr<MultiPageTitleIndicator> multipage_indicator_;
   std::unique_ptr<LabelComponent> title_label_;
+  unsigned long last_update_ms_ = 0;
 };
