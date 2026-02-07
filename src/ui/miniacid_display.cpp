@@ -163,6 +163,13 @@ void MiniAcidDisplay::previousPage() {
 }
 
 void MiniAcidDisplay::update() {
+  if (MINIACID_UI_MIN_FRAME_MS > 0) {
+    unsigned long now = nowMillis();
+    if (now - last_update_ms_ < static_cast<unsigned long>(MINIACID_UI_MIN_FRAME_MS)) {
+      return;
+    }
+    last_update_ms_ = now;
+  }
   if (splash_active_) {
     unsigned long now = nowMillis();
     if (now - splash_start_ms_ >= 5000UL) splash_active_ = false;
@@ -280,7 +287,7 @@ void MiniAcidDisplay::drawSplashScreen() {
   centerText(info_y + small_h, "Space - to start/stop sound", COLOR_WHITE);
   centerText(info_y + 2 * small_h, "ESC - for help on each page", COLOR_WHITE);
   
-  centerText(info_y + 3 * small_h + 5, "v0.0.7", IGfxColor::Gray());
+  centerText(info_y + 3 * small_h + 5, "v0.0.8", IGfxColor::Gray());
   
   // char build_info[64];
   // snprintf(build_info, sizeof(build_info), "Built: %s %s", __DATE__, __TIME__);
@@ -400,6 +407,19 @@ bool MiniAcidDisplay::_handleGlobalKeyEvent(UIEvent& event) {
   };
   if (event.event_type == MINIACID_KEY_DOWN)
   {
+    if (event.ctrl || event.meta) {
+      if (event.scancode == MINIACID_LEFT) {
+        previousPage();
+        update();
+        return true;
+      }
+      if (event.scancode == MINIACID_RIGHT) {
+        nextPage();
+        update();
+        return true;
+      }
+    }
+
     char key = event.key;
     if (!key)
       return false;

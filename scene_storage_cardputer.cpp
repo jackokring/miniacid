@@ -7,6 +7,7 @@
 #include <SD.h>
 
 #include "scenes.h"
+#include "src/miniacid_config.h"
 
 #define SD_SPI_SCK_PIN  40
 #define SD_SPI_MISO_PIN 39
@@ -111,7 +112,27 @@ bool SceneStorageCardputer::readScene(std::string& out) {
   if (!file) return false;
   Serial.println("File opened successfully, reading data...");
 
+  size_t file_size = static_cast<size_t>(file.size());
+#if defined(ARDUINO)
+  if (MINIACID_SCENE_MAX_BYTES > 0 && file_size > MINIACID_SCENE_MAX_BYTES) {
+    Serial.printf("Scene too large (%zu bytes), max is %d. Skipping.\n",
+                  file_size, MINIACID_SCENE_MAX_BYTES);
+    file.close();
+    return false;
+  }
+  size_t free_heap = static_cast<size_t>(ESP.getFreeHeap());
+  if (file_size > 0 && file_size + 512 > free_heap) {
+    Serial.printf("Not enough heap for scene (%zu bytes, free %zu). Skipping.\n",
+                  file_size, free_heap);
+    file.close();
+    return false;
+  }
+#endif
+
   out.clear();
+  if (file_size > 0) {
+    out.reserve(file_size);
+  }
   while (file.available()) {
     int c = file.read();
     if (c < 0) break;

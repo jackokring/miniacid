@@ -2,15 +2,18 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <memory>
-#include <vector>
 #include <string>
+#include <type_traits>
+#include <vector>
 
 #include "scene_storage.h"
 #include "scenes.h"
 #include "mini_tb303.h"
 #include "mini_drumvoices.h"
 #include "tube_distortion.h"
+#include "one_knob_compressor.h"
+#include "transient_shaper.h"
+#include "drum_reverb.h"
 
 // ===================== Audio config =====================
 
@@ -55,6 +58,13 @@ private:
 enum class MiniAcidParamId : uint8_t {
   MainVolume = 0,
   DrumEngine = 1,
+  DrumVolume = 2,
+  DrumDistortion = 3,
+  DrumCompression = 4,
+  DrumTransientAttack = 5,
+  DrumTransientSustain = 6,
+  DrumReverbMix = 7,
+  DrumReverbDecay = 8,
   Count
 };
 class MiniAcid {
@@ -189,6 +199,12 @@ public:
   void generateAudioBuffer(int16_t *buffer, size_t numSamples);
 
 private:
+  enum class DrumEngineType : uint8_t {
+    TR808,
+    TR909,
+    TR606
+  };
+
   void updateSamplesPerStep();
   void advanceStep();
   float noteToFreq(int note);
@@ -213,10 +229,38 @@ private:
   int clampSongPosition(int position) const;
   void upgradeAutomationOptionLanes();
   void applyDrumAutomation(float t);
+  void updateDrumDistortion(float value);
+  void updateDrumCompression(float value);
+  void updateDrumTransientAttack(float value);
+  void updateDrumTransientSustain(float value);
+  void updateDrumReverbMix(float value);
+  void updateDrumReverbDecay(float value);
+  void destroyDrumEngine();
+  void createDrumEngine(DrumEngineType type);
 
   TB303Voice voice303;
   TB303Voice voice3032;
-  std::unique_ptr<DrumSynthVoice> drums;
+  static constexpr size_t kDrumStorageSize =
+      sizeof(TR808DrumSynthVoice) > sizeof(TR909DrumSynthVoice)
+          ? (sizeof(TR808DrumSynthVoice) > sizeof(TR606DrumSynthVoice)
+                 ? sizeof(TR808DrumSynthVoice)
+                 : sizeof(TR606DrumSynthVoice))
+          : (sizeof(TR909DrumSynthVoice) > sizeof(TR606DrumSynthVoice)
+                 ? sizeof(TR909DrumSynthVoice)
+                 : sizeof(TR606DrumSynthVoice));
+  static constexpr size_t kDrumStorageAlign =
+      alignof(TR808DrumSynthVoice) > alignof(TR909DrumSynthVoice)
+          ? (alignof(TR808DrumSynthVoice) > alignof(TR606DrumSynthVoice)
+                 ? alignof(TR808DrumSynthVoice)
+                 : alignof(TR606DrumSynthVoice))
+          : (alignof(TR909DrumSynthVoice) > alignof(TR606DrumSynthVoice)
+                 ? alignof(TR909DrumSynthVoice)
+                 : alignof(TR606DrumSynthVoice));
+  using DrumStorage = std::aligned_storage_t<kDrumStorageSize, kDrumStorageAlign>;
+
+  DrumStorage drum_storage_;
+  DrumSynthVoice* drums = nullptr;
+  DrumEngineType drum_engine_type_ = DrumEngineType::TR808;
   float sampleRateValue;
   std::string drumEngineName_;
 
@@ -258,6 +302,10 @@ private:
   TempoDelay delay3032;
   TubeDistortion distortion303;
   TubeDistortion distortion3032;
+  TubeDistortion drumDistortion;
+  OneKnobCompressor drumCompressor;
+  TransientShaper drumTransientShaper;
+  DrumReverb drumReverb;
   int16_t lastBuffer[AUDIO_BUFFER_SAMPLES];
   size_t lastBufferCount;
   uint8_t automationSampleCountdown_;

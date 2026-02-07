@@ -1,11 +1,10 @@
 #include "tb303_params_page.h"
 
-#include <algorithm>
 #include <cstdarg>
 #include <cstdio>
-#include <cmath>
 #include <functional>
 
+#include "../components/knob_component.h"
 #include "../help_dialog_frames.h"
 
 namespace {
@@ -27,163 +26,6 @@ void drawAutomationIndicator(IGfx& gfx, int x, int y, int size, bool enabled) {
   }
 }
 } // namespace
-
-class Synth303ParamsPage::KnobComponent : public FocusableComponent {
- public:
-  KnobComponent(const Parameter& param, IGfxColor ring_color,
-                IGfxColor indicator_color,
-                std::function<void(int)> adjust_fn,
-                MiniAcid* mini_acid, TB303ParamId param_id, int voice_index)
-      : param_(param),
-        ring_color_(ring_color),
-        indicator_color_(indicator_color),
-        adjust_fn_(std::move(adjust_fn)),
-        mini_acid_(mini_acid),
-        param_id_(param_id),
-        voice_index_(voice_index) {}
-
-  void setValue(int direction) {
-    if (adjust_fn_) {
-      adjust_fn_(direction);
-    }
-  }
-
-  bool handleEvent(UIEvent& ui_event) override {
-    if (ui_event.event_type == MINIACID_MOUSE_DOWN) {
-      if (ui_event.button != MOUSE_BUTTON_LEFT) {
-        return false;
-      }
-      if (!contains(ui_event.x, ui_event.y)) {
-        return false;
-      }
-      dragging_ = true;
-      last_drag_y_ = ui_event.y;
-      drag_accum_ = 0;
-      return true;
-    }
-
-    if (ui_event.event_type == MINIACID_MOUSE_UP) {
-      if (!dragging_) {
-        return false;
-      }
-      dragging_ = false;
-      drag_accum_ = 0;
-      return true;
-    }
-
-    if (ui_event.event_type == MINIACID_MOUSE_DRAG) {
-      if (!dragging_) {
-        return false;
-      }
-      int delta = ui_event.dy;
-      if (delta == 0) {
-        delta = ui_event.y - last_drag_y_;
-      }
-      last_drag_y_ = ui_event.y;
-      drag_accum_ += delta;
-      constexpr int kPixelsPerStep = 4;
-      while (drag_accum_ <= -kPixelsPerStep) {
-        setValue(1);
-        drag_accum_ += kPixelsPerStep;
-      }
-      while (drag_accum_ >= kPixelsPerStep) {
-        setValue(-1);
-        drag_accum_ -= kPixelsPerStep;
-      }
-      return true;
-    }
-
-    if (ui_event.event_type == MINIACID_MOUSE_SCROLL) {
-      if (!contains(ui_event.x, ui_event.y)) {
-        return false;
-      }
-      if (ui_event.wheel_dy > 0) {
-        setValue(1);
-        return true;
-      }
-      if (ui_event.wheel_dy < 0) {
-        setValue(-1);
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  void draw(IGfx& gfx) override {
-    const Rect& bounds = getBoundaries();
-    int radius = std::min(bounds.w, bounds.h) / 2;
-    int cx = bounds.x + bounds.w / 2;
-    int cy = bounds.y + bounds.h / 2;
-
-    float norm = std::clamp(param_.normalized(), 0.0f, 1.0f);
-
-    gfx.drawKnobFace(cx, cy, radius, ring_color_, COLOR_BLACK);
-
-    constexpr float kDegToRad = 3.14159265f / 180.0f;
-
-    float deg_angle = (135.0f + norm * 270.0f);
-    if (deg_angle >= 360.0f) {
-      deg_angle -= 360.0f;
-    }
-    float angle = (deg_angle) * kDegToRad;
-
-    int ix = cx + static_cast<int>(roundf(cosf(angle) * (radius - 2)));
-    int iy = cy + static_cast<int>(roundf(sinf(angle) * (radius - 2)));
-
-    drawLineColored(gfx, cx, cy, ix, iy, indicator_color_);
-
-    const char* label = param_.label();
-    if (!label) {
-      label = "";
-    }
-    gfx.setTextColor(COLOR_LABEL);
-    int label_w = textWidth(gfx, label);
-    int label_x = cx - label_w / 2;
-    int label_y = cy + radius + 6;
-    gfx.drawText(label_x, label_y, label);
-    if (mini_acid_) {
-      const AutomationLane* lane = mini_acid_->automationLane303(param_id_, voice_index_);
-      if (lane && lane->hasNodes()) {
-        int size = automationIndicatorSize(gfx.fontHeight());
-        if (size > 0) {
-          int square_x = label_x + label_w + 2;
-          int square_y = label_y + (gfx.fontHeight() - size) / 2;
-          drawAutomationIndicator(gfx, square_x, square_y, size, lane->enabled);
-        }
-      }
-    }
-
-    char buf[48];
-    const char* unit = param_.unit();
-    float value = param_.value();
-    if (unit && unit[0]) {
-      snprintf(buf, sizeof(buf), "%.0f %s", value, unit);
-    } else {
-      snprintf(buf, sizeof(buf), "%.2f", value);
-    }
-    int val_x = cx - textWidth(gfx, buf) / 2;
-    gfx.drawText(val_x, cy - radius - 14, buf);
-
-    if (isFocused()) {
-      int pad = 3;
-      gfx.drawRect(bounds.x - pad, bounds.y - pad,
-                   bounds.w + pad * 2, bounds.h + pad * 2, kFocusColor);
-    }
-  }
-
- private:
-  const Parameter& param_;
-  IGfxColor ring_color_;
-  IGfxColor indicator_color_;
-  std::function<void(int)> adjust_fn_;
-  bool dragging_ = false;
-  int last_drag_y_ = 0;
-  int drag_accum_ = 0;
-  MiniAcid* mini_acid_ = nullptr;
-  TB303ParamId param_id_ = TB303ParamId::Count;
-  int voice_index_ = 0;
-};
 
 class Synth303ParamsPage::LabelValueComponent : public FocusableComponent {
  public:
@@ -261,6 +103,11 @@ void Synth303ParamsPage::initComponents() {
   const Parameter& pEnv = mini_acid_.parameter303(TB303ParamId::EnvAmount, voice_index_);
   const Parameter& pDec = mini_acid_.parameter303(TB303ParamId::EnvDecay, voice_index_);
 
+  KnobAutomationAccess automation_access;
+  automation_access.lane = [this](int param_id) -> const AutomationLane* {
+    return mini_acid_.automationLane303(static_cast<TB303ParamId>(param_id), voice_index_);
+  };
+
   cutoff_knob_ = std::make_shared<KnobComponent>(
       pCut, COLOR_KNOB_1, COLOR_KNOB_1,
       [this](int direction) {
@@ -269,7 +116,7 @@ void Synth303ParamsPage::initComponents() {
           mini_acid_.adjust303Parameter(TB303ParamId::Cutoff, steps * direction, voice_index_);
         });
       },
-      &mini_acid_, TB303ParamId::Cutoff, voice_index_);
+      automation_access, static_cast<int>(TB303ParamId::Cutoff));
   resonance_knob_ = std::make_shared<KnobComponent>(
       pRes, COLOR_KNOB_2, COLOR_KNOB_2,
       [this](int direction) {
@@ -278,7 +125,7 @@ void Synth303ParamsPage::initComponents() {
           mini_acid_.adjust303Parameter(TB303ParamId::Resonance, steps * direction, voice_index_);
         });
       },
-      &mini_acid_, TB303ParamId::Resonance, voice_index_);
+      automation_access, static_cast<int>(TB303ParamId::Resonance));
   env_amount_knob_ = std::make_shared<KnobComponent>(
       pEnv, COLOR_KNOB_3, COLOR_KNOB_3,
       [this](int direction) {
@@ -287,7 +134,7 @@ void Synth303ParamsPage::initComponents() {
           mini_acid_.adjust303Parameter(TB303ParamId::EnvAmount, steps * direction, voice_index_);
         });
       },
-      &mini_acid_, TB303ParamId::EnvAmount, voice_index_);
+      automation_access, static_cast<int>(TB303ParamId::EnvAmount));
   env_decay_knob_ = std::make_shared<KnobComponent>(
       pDec, COLOR_KNOB_4, COLOR_KNOB_4,
       [this](int direction) {
@@ -296,7 +143,7 @@ void Synth303ParamsPage::initComponents() {
           mini_acid_.adjust303Parameter(TB303ParamId::EnvDecay, steps * direction, voice_index_);
         });
       },
-      &mini_acid_, TB303ParamId::EnvDecay, voice_index_);
+      automation_access, static_cast<int>(TB303ParamId::EnvDecay));
   osc_control_ = std::make_shared<LabelValueComponent>("OSC:", COLOR_WHITE,
                                                        IGfxColor::Cyan());
   filter_control_ = std::make_shared<LabelValueComponent>("FLT:", COLOR_WHITE,
@@ -319,10 +166,13 @@ void Synth303ParamsPage::initComponents() {
   addChild(delay_control_);
 
   // setting boundaries really belongs in a layout pass, but for now do it here
-  int x_margin = -10;
+  int x_margin = -15;
   int usable_w = width() - x_margin * 2;
 
   int radius = 18;
+  int text_gap = 2;
+  int knob_text_h = gfx_.fontHeight() * 2 + text_gap * 2;
+  int knob_bounds_h = radius * 2 + knob_text_h + 8;
   int spacing = usable_w / 5;
   
   int cx1 = dx() + x_margin + spacing * 1;
@@ -331,14 +181,15 @@ void Synth303ParamsPage::initComponents() {
   int cx4 = dx() + x_margin + spacing * 4;
   int center_y_for_knobs = dy() + height() / 2 - 13;
 
-  cutoff_knob_->setBoundaries(Rect(cx1 - radius, center_y_for_knobs - radius,
-                                     radius * 2, radius * 2));
-  resonance_knob_->setBoundaries(Rect(cx2 - radius, center_y_for_knobs - radius,
-                                      radius * 2, radius * 2));
-  env_amount_knob_->setBoundaries(Rect(cx3 - radius, center_y_for_knobs - radius,
-                                      radius * 2, radius * 2));
-  env_decay_knob_->setBoundaries(Rect(cx4 - radius, center_y_for_knobs - radius,
-                                      radius * 2, radius * 2));
+  int knob_y = center_y_for_knobs - knob_bounds_h / 2;
+  cutoff_knob_->setBoundaries(Rect(cx1 - radius, knob_y,
+                                     radius * 2, knob_bounds_h));
+  resonance_knob_->setBoundaries(Rect(cx2 - radius, knob_y,
+                                      radius * 2, knob_bounds_h));
+  env_amount_knob_->setBoundaries(Rect(cx3 - radius, knob_y,
+                                      radius * 2, knob_bounds_h));
+  env_decay_knob_->setBoundaries(Rect(cx4 - radius, knob_y,
+                                      radius * 2, knob_bounds_h));
 
 
   initialized_ = true;
@@ -408,7 +259,8 @@ void Synth303ParamsPage::draw(IGfx& gfx) {
 
   int center_y_for_knobs = dy() + height() / 2 - 13;
 
-  int x_margin = -10;
+  // int x_margin = -10;
+  int x_margin = -15;
   int usable_w = width() - x_margin * 2;
 
   int radius = 18;

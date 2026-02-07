@@ -1,17 +1,36 @@
 #include "drum_sequencer_page.h"
 
+#include <algorithm>
 #include <cctype>
 #include <utility>
 
 #include "../help_dialog_frames.h"
 #include "drum_pattern_automation_page.h"
 #include "../components/bank_selection_bar.h"
-#include "../components/label_option.h"
 #include "../components/label_component.h"
+#include "../components/knob_component.h"
 #include "../components/pattern_selection_bar.h"
 #include "../ui_colors.h"
 
 namespace {
+inline constexpr IGfxColor kFocusColor = IGfxColor(0xB36A00);
+
+int automationIndicatorSize(int font_height) {
+  int size = 5;
+  if (size > font_height - 2) size = font_height - 2;
+  if (size < 2) return 0;
+  return size;
+}
+
+void drawAutomationIndicator(IGfx& gfx, int x, int y, int size, bool enabled) {
+  IGfxColor square_color = IGfxColor::Yellow();
+  if (enabled) {
+    gfx.fillRect(x, y, size, size, square_color);
+  } else {
+    gfx.drawRect(x, y, size, size, square_color);
+  }
+}
+
 struct DrumPatternClipboard {
   bool has_pattern = false;
   DrumPatternSet pattern{};
@@ -190,6 +209,96 @@ class DrumSequencerGridComponent : public FocusableComponent {
   Callbacks callbacks_;
 };
 
+class LabelValueComponent : public FocusableComponent {
+ public:
+  LabelValueComponent(const char* label, IGfxColor label_color,
+                      IGfxColor value_color)
+      : label_(label ? label : ""),
+        label_color_(label_color),
+        value_color_(value_color) {}
+
+  void setValue(const std::string& value) { value_ = value; }
+  void setValue(const char* value) { value_ = value ? value : ""; }
+  void setAdjustCallback(std::function<void(int)> callback) {
+    adjust_callback_ = std::move(callback);
+  }
+  void setAutomationLane(MiniAcid& mini_acid, DrumAutomationParamId param_id) {
+    mini_acid_ = &mini_acid;
+    param_id_ = param_id;
+  }
+
+  bool handleEvent(UIEvent& ui_event) override {
+    if (!isFocused()) return false;
+    if (ui_event.event_type == MINIACID_KEY_DOWN) {
+      int delta = 0;
+      switch (ui_event.scancode) {
+        case MINIACID_DOWN:
+          delta = -1;
+          break;
+        case MINIACID_UP:
+          delta = 1;
+          break;
+        default:
+          return false;
+      }
+      if (adjust_callback_) {
+        adjust_callback_(delta);
+        return true;
+      }
+      return false;
+    }
+    if (ui_event.event_type == MINIACID_MOUSE_SCROLL && contains(ui_event.x, ui_event.y)) {
+      if (ui_event.wheel_dy > 0 && adjust_callback_) {
+        adjust_callback_(1);
+        return true;
+      }
+      if (ui_event.wheel_dy < 0 && adjust_callback_) {
+        adjust_callback_(-1);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void draw(IGfx& gfx) override {
+    const Rect& bounds = getBoundaries();
+    gfx.setTextColor(label_color_);
+    gfx.drawText(bounds.x, bounds.y, label_.c_str());
+    int label_w = textWidth(gfx, label_.c_str());
+    gfx.setTextColor(value_color_);
+    int label_value_gap = 3;
+    int value_x = bounds.x + label_w + label_value_gap;
+    if (mini_acid_) {
+      const AutomationLane* lane = mini_acid_->automationLaneDrum(param_id_);
+      if (lane && lane->hasNodes()) {
+        int size = automationIndicatorSize(gfx.fontHeight());
+        if (size > 0) {
+          int square_x = bounds.x + label_w + label_value_gap;
+          int square_y = bounds.y + (gfx.fontHeight() - size) / 2;
+          drawAutomationIndicator(gfx, square_x, square_y, size, lane->enabled);
+          value_x = square_x + size + label_value_gap;
+        }
+      }
+    }
+    gfx.drawText(value_x, bounds.y, value_.c_str());
+
+    if (isFocused()) {
+      int pad = 2;
+      gfx.drawRect(bounds.x - pad, bounds.y - pad,
+                   bounds.w + pad * 2, bounds.h + pad * 2, kFocusColor);
+    }
+  }
+
+ private:
+  std::string label_;
+  std::string value_;
+  IGfxColor label_color_;
+  IGfxColor value_color_;
+  std::function<void(int)> adjust_callback_;
+  MiniAcid* mini_acid_ = nullptr;
+  DrumAutomationParamId param_id_ = DrumAutomationParamId::Count;
+};
+
 class DrumSequencerMainPage : public IPage {
  public:
   DrumSequencerMainPage(MiniAcid& mini_acid, AudioGuard& audio_guard);
@@ -229,23 +338,33 @@ class DrumSequencerMainPage : public IPage {
   std::shared_ptr<BankSelectionBarComponent> bank_bar_;
 };
 
-class GlobalDrumSettingsPage : public IPage {
+class DrumSettingsPage : public IPage {
  public:
-  explicit GlobalDrumSettingsPage(MiniAcid& mini_acid);
+  DrumSettingsPage(MiniAcid& mini_acid, AudioGuard& audio_guard);
   bool handleEvent(UIEvent& ui_event) override;
   void draw(IGfx& gfx) override;
   const std::string & getTitle() const override {
-    static std::string title = "GLOBAL SETTINGS";
+    static std::string title = "DRUM SETTINGS";
     return title;
   }
 
  private:
   void applyDrumEngineSelection();
   void syncDrumEngineSelection();
+  void setDrumEngineIndex(int index);
+  void withAudioGuard(const std::function<void()>& fn);
 
   MiniAcid& mini_acid_;
+  AudioGuard& audio_guard_;
   std::vector<std::string> drum_engine_options_;
-  std::shared_ptr<LabelOptionComponent> character_control_;
+  std::shared_ptr<LabelValueComponent> character_control_;
+  std::shared_ptr<KnobComponent> distortion_knob_;
+  std::shared_ptr<KnobComponent> compression_knob_;
+  std::shared_ptr<KnobComponent> transient_attack_knob_;
+  std::shared_ptr<KnobComponent> transient_sustain_knob_;
+  std::shared_ptr<KnobComponent> reverb_mix_knob_;
+  std::shared_ptr<KnobComponent> reverb_decay_knob_;
+  int drum_engine_index_ = 0;
 };
 
 DrumSequencerMainPage::DrumSequencerMainPage(MiniAcid& mini_acid, AudioGuard& audio_guard)
@@ -673,55 +792,263 @@ void DrumSequencerMainPage::draw(IGfx& gfx) {
 }
 } // namespace
 
-GlobalDrumSettingsPage::GlobalDrumSettingsPage(MiniAcid& mini_acid)
-  : mini_acid_(mini_acid) {
-  character_control_ = std::make_shared<LabelOptionComponent>(
-      "Character", COLOR_LABEL, COLOR_WHITE);
+DrumSettingsPage::DrumSettingsPage(MiniAcid& mini_acid, AudioGuard& audio_guard)
+  : mini_acid_(mini_acid),
+    audio_guard_(audio_guard) {
+  character_control_ = std::make_shared<LabelValueComponent>(
+      "KIT:", COLOR_WHITE, IGfxColor::Cyan());
   drum_engine_options_ = mini_acid_.getAvailableDrumEngines();
   if (drum_engine_options_.empty()) {
     drum_engine_options_ = {"808", "909", "606"};
   }
-  character_control_->setOptions(drum_engine_options_);
+  character_control_->setAutomationLane(mini_acid_, DrumAutomationParamId::DrumEngine);
+  character_control_->setAdjustCallback([this](int delta) {
+    if (drum_engine_options_.empty()) return;
+    int count = static_cast<int>(drum_engine_options_.size());
+    int next = drum_engine_index_;
+    if (next < 0) next = 0;
+    next = (next + delta) % count;
+    if (next < 0) next += count;
+    setDrumEngineIndex(next);
+    applyDrumEngineSelection();
+  });
+  setDrumEngineIndex(0);
+
+  const Parameter& pDist = mini_acid_.drumParameter(DrumAutomationParamId::Distortion);
+  const Parameter& pComp = mini_acid_.drumParameter(DrumAutomationParamId::Compression);
+  const Parameter& pAtk = mini_acid_.drumParameter(DrumAutomationParamId::TransientAttack);
+  const Parameter& pSus = mini_acid_.drumParameter(DrumAutomationParamId::TransientSustain);
+  const Parameter& pRvb = mini_acid_.drumParameter(DrumAutomationParamId::ReverbMix);
+  const Parameter& pRdec = mini_acid_.drumParameter(DrumAutomationParamId::ReverbDecay);
+  KnobAutomationAccess automation_access;
+  automation_access.lane = [this](int param_id) -> const AutomationLane* {
+    return mini_acid_.automationLaneDrum(static_cast<DrumAutomationParamId>(param_id));
+  };
+  distortion_knob_ = std::make_shared<KnobComponent>(
+      pDist, COLOR_KNOB_1, COLOR_KNOB_1,
+      [this](int direction) {
+        int steps = 5;
+        mini_acid_.adjustParameter(MiniAcidParamId::DrumDistortion, steps * direction);
+      },
+      automation_access, static_cast<int>(DrumAutomationParamId::Distortion));
+  compression_knob_ = std::make_shared<KnobComponent>(
+      pComp, COLOR_KNOB_2, COLOR_KNOB_2,
+      [this](int direction) {
+        int steps = 5;
+        mini_acid_.adjustParameter(MiniAcidParamId::DrumCompression, steps * direction);
+      },
+      automation_access, static_cast<int>(DrumAutomationParamId::Compression));
+  transient_attack_knob_ = std::make_shared<KnobComponent>(
+      pAtk, COLOR_KNOB_3, COLOR_KNOB_3,
+      [this](int direction) {
+        int steps = 5;
+        mini_acid_.adjustParameter(MiniAcidParamId::DrumTransientAttack, steps * direction);
+      },
+      automation_access, static_cast<int>(DrumAutomationParamId::TransientAttack));
+  transient_sustain_knob_ = std::make_shared<KnobComponent>(
+      pSus, COLOR_KNOB_4, COLOR_KNOB_4,
+      [this](int direction) {
+        int steps = 5;
+        mini_acid_.adjustParameter(MiniAcidParamId::DrumTransientSustain, steps * direction);
+      },
+      automation_access, static_cast<int>(DrumAutomationParamId::TransientSustain));
+  reverb_mix_knob_ = std::make_shared<KnobComponent>(
+      pRvb, COLOR_KNOB_5, COLOR_KNOB_5,
+      [this](int direction) {
+        int steps = 5;
+        mini_acid_.adjustParameter(MiniAcidParamId::DrumReverbMix, steps * direction);
+      },
+      automation_access, static_cast<int>(DrumAutomationParamId::ReverbMix));
+  reverb_decay_knob_ = std::make_shared<KnobComponent>(
+      pRdec, COLOR_KNOB_6, COLOR_KNOB_6,
+      [this](int direction) {
+        int steps = 5;
+        mini_acid_.adjustParameter(MiniAcidParamId::DrumReverbDecay, steps * direction);
+      },
+      automation_access, static_cast<int>(DrumAutomationParamId::ReverbDecay));
+  addChild(distortion_knob_);
+  addChild(compression_knob_);
+  // addChild(transient_attack_knob_);
+  addChild(transient_sustain_knob_);
+  addChild(reverb_mix_knob_);
+  addChild(reverb_decay_knob_);
+
+
   addChild(character_control_);
 }
 
-bool GlobalDrumSettingsPage::handleEvent(UIEvent& ui_event) {
-  int before = character_control_ ? character_control_->optionIndex() : -1;
-  bool handled = Container::handleEvent(ui_event);
-  int after = character_control_ ? character_control_->optionIndex() : -1;
-  if (before != after) {
-    applyDrumEngineSelection();
+bool DrumSettingsPage::handleEvent(UIEvent& ui_event) {
+  if (ui_event.event_type != MINIACID_KEY_DOWN) {
+    return Container::handleEvent(ui_event);
   }
-  return handled;
+
+  switch (ui_event.scancode) {
+    case MINIACID_LEFT:
+      focusPrev();
+      return true;
+    case MINIACID_RIGHT:
+      focusNext();
+      return true;
+    default:
+      break;
+  }
+
+  bool event_handled = false;
+  switch (ui_event.key) {
+    case 'a':
+      if (distortion_knob_) {
+        distortion_knob_->setValue(1);
+      }
+      event_handled = true;
+      break;
+    case 'z':
+      if (distortion_knob_) {
+        distortion_knob_->setValue(-1);
+      }
+      event_handled = true;
+      break;
+    case 's':
+      if (compression_knob_) {
+        compression_knob_->setValue(1);
+      }
+      event_handled = true;
+      break;
+    case 'x':
+      if (compression_knob_) {
+        compression_knob_->setValue(-1);
+      }
+      event_handled = true;
+      break;
+    case 'd':
+      if (transient_sustain_knob_) {
+        transient_sustain_knob_->setValue(1);
+      }
+      event_handled = true;
+      break;
+    case 'c':
+      if (transient_sustain_knob_) {
+        transient_sustain_knob_->setValue(-1);
+      }
+      event_handled = true;
+      break;
+    case 'f':
+      if (reverb_mix_knob_) {
+        reverb_mix_knob_->setValue(1);
+      }
+      event_handled = true;
+      break;
+    case 'v':
+      if (reverb_mix_knob_) {
+        reverb_mix_knob_->setValue(-1);
+      }
+      event_handled = true;
+      break;
+    case 'g':
+      if (reverb_decay_knob_) {
+        reverb_decay_knob_->setValue(1);
+      }
+      event_handled = true;
+      break;
+    case 'b':
+      if (reverb_decay_knob_) {
+        reverb_decay_knob_->setValue(-1);
+      }
+      event_handled = true;
+      break;
+    default:
+      break;
+  }
+
+  if (event_handled) {
+    return true;
+  }
+  return Container::handleEvent(ui_event);
 }
 
-void GlobalDrumSettingsPage::draw(IGfx& gfx) {
-  const Rect& bounds = getBoundaries();
-  if (bounds.w <= 0 || bounds.h <= 0) return;
+void DrumSettingsPage::draw(IGfx& gfx) {
+  Rect bounds = getBoundaries().copy();
   syncDrumEngineSelection();
-  int x = bounds.x;
-  int y = bounds.y;
-  int w = bounds.w;
 
-  gfx.setTextColor(COLOR_LABEL);
-  gfx.drawText(x, y, "GLOBAL SETTINGS");
-  gfx.setTextColor(COLOR_WHITE);
+  int paddingTop = 4;
 
-  int row_y = y + gfx.fontHeight() + 4;
-  if (character_control_) {
-    character_control_->setBoundaries(Rect{x, row_y, w, gfx.fontHeight()});
-  }
+  bounds.removeFromTop(paddingTop);
+  Rect header_row = bounds.removeFromTop(gfx.fontHeight());
+  // if (character_control_) {
+  //   character_control_->setBoundaries(header_row);
+  // }
+
+  int row_gap = 3;
+  bounds.removeFromTop(row_gap);
+  // DEBUG:
+  // gfx.drawRect(knobs_row.x, knobs_row.y, knobs_row.w, knobs_row.h, IGfxColor::Magenta());
+  int knob_row_count = 5;
+  Rect first_knobs_row = bounds.removeFromTop(50);
+  Rect knob_row_bounds = first_knobs_row;
+  int knob_horizontal_gap = 6;
+  int total_gap = knob_horizontal_gap * (knob_row_count - 1);
+  int knob_col_w = (first_knobs_row.w - total_gap) / knob_row_count;
+  distortion_knob_->setBoundaries(first_knobs_row.removeFromLeft(knob_col_w));
+  first_knobs_row.removeFromLeft(knob_horizontal_gap);
+  compression_knob_->setBoundaries(first_knobs_row.removeFromLeft(knob_col_w));
+  first_knobs_row.removeFromLeft(knob_horizontal_gap);
+  // transient_attack_knob_->setBoundaries(first_knobs_row.removeFromLeft(knob_col_w));
+  first_knobs_row.removeFromLeft(knob_horizontal_gap);
+  transient_sustain_knob_->setBoundaries(first_knobs_row.removeFromLeft(knob_col_w));
+  first_knobs_row.removeFromLeft(knob_horizontal_gap);
+  reverb_mix_knob_->setBoundaries(first_knobs_row.removeFromLeft(knob_col_w));
+  first_knobs_row.removeFromLeft(knob_horizontal_gap);
+  reverb_decay_knob_->setBoundaries(first_knobs_row.removeFromLeft(knob_col_w));
+
+  gfx.setTextColor(COLOR_KNOB_CONTROL);
+  int shortcut_y = knob_row_bounds.y + knob_row_bounds.h + 2;
+  auto drawShortcut = [&](const Rect& knob_bounds, const char* text) {
+    int text_w = textWidth(gfx, text);
+    int text_x = knob_bounds.x + knob_bounds.w / 2 - text_w / 2;
+    if (text_w <= knob_bounds.w) {
+      if (text_x < knob_bounds.x) text_x = knob_bounds.x;
+      if (text_x + text_w > knob_bounds.x + knob_bounds.w) {
+        text_x = knob_bounds.x + knob_bounds.w - text_w;
+      }
+    } else {
+      text_x = knob_bounds.x;
+    }
+    gfx.drawText(text_x, shortcut_y, text);
+  };
+  if (distortion_knob_) drawShortcut(distortion_knob_->getBoundaries(), "A/Z");
+  if (compression_knob_) drawShortcut(compression_knob_->getBoundaries(), "S/X");
+  if (transient_sustain_knob_) drawShortcut(transient_sustain_knob_->getBoundaries(), "D/C");
+  if (reverb_mix_knob_) drawShortcut(reverb_mix_knob_->getBoundaries(), "F/V");
+  if (reverb_decay_knob_) drawShortcut(reverb_decay_knob_->getBoundaries(), "G/B");
+
+  // DEBUG: draw red rect around bounds
+  // gfx.drawRect(bounds.x, bounds.y, bounds.w, bounds.h, IGfxColor::Red());
+  
+  int center_y = bounds.h / 2;
+  int row_height = gfx.fontHeight();
+
+  bounds.removeFromBottom((center_y + row_height / 2)/2);
+  bounds.removeFromTop((center_y + row_height / 2)/2);
+  // bounds.removeFromTop(row_height);
+
+  // DEBUG:
+  // gfx.drawRect(bounds.x, bounds.y, bounds.w, bounds.h, IGfxColor::Green());
+  int side_margin = 90;
+  bounds.removeFromLeft(side_margin);
+  bounds.removeFromRight(side_margin);
+  bounds.removeFromTop(bounds.h - gfx.fontHeight());
+  character_control_->setBoundaries(bounds);
+
   Container::draw(gfx);
 }
 
-void GlobalDrumSettingsPage::applyDrumEngineSelection() {
+void DrumSettingsPage::applyDrumEngineSelection() {
   if (!character_control_) return;
-  int index = character_control_->optionIndex();
+  int index = drum_engine_index_;
   if (index < 0 || index >= static_cast<int>(drum_engine_options_.size())) return;
-  mini_acid_.setDrumEngine(drum_engine_options_[index]);
+  withAudioGuard([&]() { mini_acid_.setDrumEngine(drum_engine_options_[index]); });
 }
 
-void GlobalDrumSettingsPage::syncDrumEngineSelection() {
+void DrumSettingsPage::syncDrumEngineSelection() {
   if (!character_control_) return;
   std::string current = mini_acid_.currentDrumEngineName();
   if (current.empty()) return;
@@ -733,15 +1060,39 @@ void GlobalDrumSettingsPage::syncDrumEngineSelection() {
     }
   }
   if (target < 0) return;
-  if (character_control_->optionIndex() == target) return;
-  character_control_->setOptionIndex(target);
+  if (drum_engine_index_ == target) return;
+  setDrumEngineIndex(target);
+}
+
+void DrumSettingsPage::setDrumEngineIndex(int index) {
+  if (drum_engine_options_.empty()) {
+    drum_engine_index_ = 0;
+    if (character_control_) character_control_->setValue("");
+    return;
+  }
+  if (index < 0) index = 0;
+  if (index >= static_cast<int>(drum_engine_options_.size())) {
+    index = static_cast<int>(drum_engine_options_.size()) - 1;
+  }
+  drum_engine_index_ = index;
+  if (character_control_) {
+    character_control_->setValue(drum_engine_options_[drum_engine_index_]);
+  }
+}
+
+void DrumSettingsPage::withAudioGuard(const std::function<void()>& fn) {
+  if (audio_guard_) {
+    audio_guard_(fn);
+    return;
+  }
+  fn();
 }
 
 DrumSequencerPage::DrumSequencerPage(IGfx& gfx, MiniAcid& mini_acid, AudioGuard& audio_guard) {
   (void)gfx;
   addPage(std::make_shared<DrumSequencerMainPage>(mini_acid, audio_guard));
-  // addPage(std::make_shared<GlobalDrumSettingsPage>(mini_acid));
-  // addPage(std::make_shared<DrumPatternAutomationPage>(gfx, mini_acid, audio_guard));
+  addPage(std::make_shared<DrumSettingsPage>(mini_acid, audio_guard));
+  addPage(std::make_shared<DrumPatternAutomationPage>(gfx, mini_acid, audio_guard));
 }
 
 const std::string & DrumSequencerPage::getTitle() const {

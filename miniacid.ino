@@ -60,6 +60,7 @@ void setup() {
 
   Serial.begin(115200);
 #if defined(MINIACID_SCENE_DEBUG)
+
   Serial.printf("sizeof(AutomationLane)=%u sizeof(SynthPattern)=%u sizeof(Scene)=%u\n",
                 static_cast<unsigned>(sizeof(AutomationLane)),
                 static_cast<unsigned>(sizeof(SynthPattern)),

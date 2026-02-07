@@ -1,4 +1,5 @@
 #include "cardputer_display.h"
+#include "src/miniacid_config.h"
 // FreeFont sources:
 // https://github.com/adafruit/Adafruit-GFX-Library/blob/master/Fonts/FreeMono24pt7b.h
 // https://github.com/adafruit/Adafruit-GFX-Library/blob/master/Fonts/FreeSerif18pt7b.h
@@ -227,6 +228,42 @@ void CardputerDisplay::drawCircle(int x, int y, int r, IGfxColor color) {
 void CardputerDisplay::drawKnobFace(int cx, int cy, int radius, IGfxColor ringColor,
                                     IGfxColor bgColor) {
   if (radius <= 0) return;
+#if MINIACID_DISABLE_KNOB_FACE_CACHE
+  (void)bgColor;
+  if (frame_.empty()) return;
+  uint16_t c = ringColor.toCardputerColor();
+  auto plot = [&](int px, int py) {
+    if (px >= 0 && px < w_ && py >= 0 && py < h_) frame_[py * w_ + px] = c;
+  };
+  int f = 1 - radius;
+  int ddF_x = 1;
+  int ddF_y = -2 * radius;
+  int xx = 0;
+  int yy = radius;
+  plot(cx, cy + radius);
+  plot(cx, cy - radius);
+  plot(cx + radius, cy);
+  plot(cx - radius, cy);
+  while (xx < yy) {
+    if (f >= 0) {
+      yy--;
+      ddF_y += 2;
+      f += ddF_y;
+    }
+    xx++;
+    ddF_x += 2;
+    f += ddF_x;
+    plot(cx + xx, cy + yy);
+    plot(cx - xx, cy + yy);
+    plot(cx + xx, cy - yy);
+    plot(cx - xx, cy - yy);
+    plot(cx + yy, cy + xx);
+    plot(cx - yy, cy + xx);
+    plot(cx + yy, cy - xx);
+    plot(cx - yy, cy - xx);
+  }
+  return;
+#endif
   uint16_t ring565 = ringColor.toCardputerColor();
   uint16_t bg565 = bgColor.toCardputerColor();
 

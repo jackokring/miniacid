@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "../ui_core.h"
-#include "../components/drum_automation_lane_editor.h"
+#include "../components/automation_lane_editor.h"
 #include "../components/bank_selection_bar.h"
 #include "../components/combo_box.h"
 #include "../components/label_component.h"
@@ -45,7 +45,7 @@ class DrumPatternAutomationPage : public IPage {
   std::shared_ptr<PatternSelectionBarComponent> pattern_bar_;
   std::shared_ptr<BankSelectionBarComponent> bank_bar_;
   std::shared_ptr<ComboBoxComponent> combo_box_;
-  std::shared_ptr<DrumAutomationLaneEditor> automation_editor_;
+  std::shared_ptr<AutomationLaneEditor> automation_editor_;
   std::vector<DrumAutomationParamId> param_ids_;
 };
 

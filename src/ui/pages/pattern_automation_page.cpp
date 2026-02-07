@@ -111,7 +111,26 @@ PatternAutomationPage::PatternAutomationPage(IGfx &gfx,
     combo_box_ = std::make_shared<ComboBoxComponent>(std::move(param_options));
     combo_box_->setFocusable(true);
     addChild(combo_box_);
-    automation_editor_ = std::make_shared<AutomationLaneEditor>(mini_acid_, audio_guard_, voice_index_);
+    AutomationLaneAccess access;
+    access.parameter = [this](int param_id) -> const Parameter& {
+        return mini_acid_.parameter303(static_cast<TB303ParamId>(param_id), voice_index_);
+    };
+    access.lane = [this](int param_id) -> const AutomationLane* {
+        return mini_acid_.automationLane303(static_cast<TB303ParamId>(param_id), voice_index_);
+    };
+    access.editLane = [this](int param_id) -> AutomationLane* {
+        return mini_acid_.editAutomationLane303(static_cast<TB303ParamId>(param_id), voice_index_);
+    };
+    access.currentStep = [this]() { return mini_acid_.currentStep(); };
+    access.isPlaying = [this]() { return mini_acid_.isPlaying(); };
+    access.currentStepProgress = [this]() { return mini_acid_.currentStepProgress(); };
+    int initial_param_id = static_cast<int>(TB303ParamId::Cutoff);
+    if (!param_ids_.empty()) {
+        initial_param_id = static_cast<int>(param_ids_[0]);
+    }
+    automation_editor_ = std::make_shared<AutomationLaneEditor>(audio_guard_,
+                                                               std::move(access),
+                                                               initial_param_id);
     automation_editor_->setFocusable(true);
     addChild(automation_editor_);
 }
@@ -395,7 +414,7 @@ void PatternAutomationPage::draw(IGfx &gfx)
         if (editor_h < 0)
             editor_h = 0;
         automation_editor_->setBoundaries(Rect{editor_x, editor_y, editor_w, editor_h});
-        automation_editor_->setParamId(selectedParamId());
+        automation_editor_->setParamId(static_cast<int>(selectedParamId()));
     }
     if (combo_box_) {
         combo_box_->draw(gfx);

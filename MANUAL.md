@@ -28,7 +28,8 @@
 - **Eight-voice drum machine** with classic 808 sounds (kick, snare, hats, toms, rim, clap)
 - **16-step sequencer** for each voice
 - **Pattern banks** with 8 slots per instrument
-- **Per-pattern automation** for 303 parameters
+- **Per-pattern automation** for 303 and drum parameters
+- **Multiple drum kits** (808/909/606) with per-pattern automation
 - **Song mode** for arranging patterns into complete tracks
 - **Live muting** for all voices
 - **Audio recording** to WAV files
@@ -103,10 +104,12 @@ MiniAcid has several pages accessible via `[` and `]` keys:
 2. **Pattern Edit Page (A)** - 303A sequencer editor + automation subpage
 3. **TB-303 Page (B)** - Second bass synth parameters and waveform
 4. **Pattern Edit Page (B)** - 303B sequencer editor + automation subpage
-5. **Drum Sequencer** - Drum pattern editor
+5. **Drum Sequencer** - Drum pattern editor + settings + automation subpages
 6. **Song Mode** - Pattern arrangement and song sequencing
 7. **Project Page** - Scene management and settings
 8. **Help Page** - Keyboard shortcuts and controls
+
+Use **CTRL/CMD+UP/DOWN** to switch subpages when a page has multiple views (303 pattern automation and drum settings/automation).
 
 ---
 
@@ -162,6 +165,9 @@ Each 303 voice has the following controls:
   - **`S`** - Increase resonance
   - **`X`** - Decrease resonance
 
+- **Filter Type** - LP/BP/HP filter models
+  - Focus **FLT** with **LEFT/RIGHT**, then use **UP/DOWN** to change
+
 #### Envelope Section
 - **Env Amount** - Envelope modulation depth
   - **`D`** - Increase envelope amount
@@ -174,13 +180,13 @@ Each 303 voice has the following controls:
 #### Oscillator
 - **Waveform** - Oscillator waveform type
   - Options: Saw, Square, Pulse (various widths)
-  - Adjust in parameter page
+  - **`T`** / **`G`** cycles waveform (or focus **OSC** and use **UP/DOWN**)
 
 #### Effects
 - **Delay** - Tempo-synced delay effect
   - **`M`** - Toggle delay on/off
 
-- **Distortion** - Saturation/overdrive effect
+- **Tube Distortion** - Saturation/overdrive effect
   - **`N`** - Toggle distortion on/off
 
 ### Mouse Control (Desktop/Web)
@@ -264,8 +270,8 @@ Each 303 voice has 8 pattern slots:
 - **ALT+C** - Transpose pattern down one semitone
 
 **Rotate**:
-- **F** - Rotate pattern forward by one step
-- **V** - Rotate pattern backward by one step
+- **ALT+F** - Rotate pattern forward by one step
+- **ALT+V** - Rotate pattern backward by one step
 
 ### Pattern Automation (303)
 
@@ -291,6 +297,7 @@ Each 303 pattern has an automation subpage for parameter lanes (cutoff, resonanc
   - Filled = enabled, outline = disabled
 - Lanes hold the last node value to the end of the pattern
 - Copy/paste/cut operations include automation data for the pattern
+- Option-based lanes (oscillator, filter type) use discrete steps per option
 
 ### Mouse Control (Desktop/Web)
 
@@ -322,6 +329,13 @@ The drum sequencer features 8 drum voices arranged in a grid:
 
 *(Numbers in parentheses are mute keys)*
 
+### Drum Kits
+
+MiniAcid ships with three drum kits inspired by different classic drum machines:
+- **808** (default)
+- **909**
+- **606**
+
 ### Navigation
 
 **Move in Grid**:
@@ -345,6 +359,34 @@ The drum sequencer features 8 drum voices arranged in a grid:
 **Load Pattern**:
 - Navigate to pattern row (top of grid)
 - Press **ENTER** to load selected pattern
+
+### Drum Settings (subpage)
+
+Switch to the **Drum Settings** subpage with **CTRL/CMD+UP/DOWN**.
+
+- **KIT** - Select 808/909/606 (focus the KIT label, then use **UP/DOWN**)
+- **Distortion** - A/Z
+- **Compression** - S/X
+- **Transient Sustain** - D/C
+- **Reverb Mix** - F/V
+- **Reverb Decay** - G/B
+
+Automation indicators appear next to parameters that have automation lanes.
+
+### Drum Automation (subpage)
+
+Switch to the **Drum Automation** subpage with **CTRL/CMD+UP/DOWN**.
+
+Drum automation is per-pattern and includes these lanes:
+- **KIT** (drum engine)
+- **DIST** (distortion)
+- **COMP** (compression)
+- **SUS** (transient sustain)
+- **RVB** (reverb mix)
+- **RDEC** (reverb decay)
+- **VOL** (drum volume)
+
+Use the same lane editor controls as the 303 automation page (see below). Option-based lanes (KIT) use discrete steps per option.
 
 ### Mouse Control (Desktop/Web)
 
@@ -575,8 +617,12 @@ MiniAcid can record your sessions to WAV audio files. Recording captures the mas
 | **C** | Env Amount | Decrease |
 | **F** | Decay | Increase |
 | **V** | Decay | Decrease |
+| **T** | Oscillator | Next waveform |
+| **G** | Oscillator | Previous waveform |
 | **M** | Delay | Toggle on/off |
 | **N** | Distortion | Toggle on/off |
+| **LEFT/RIGHT** | Focus control | OSC / FLT / DST / DLY |
+| **UP/DOWN** | Adjust focused control | OSC / FLT / DST / DLY |
 
 ### Pattern Editing (303 & Drum pages)
 
@@ -586,8 +632,8 @@ MiniAcid can record your sessions to WAV audio files. Recording captures the mas
 | **Q**-**I** | Select pattern slots 1-8 (when on patterns row)|
 | **ENTER** | Load pattern / Toggle hit |
 | **BACKSPACE** | Clear step |
-| **F** | Rotate 303 pattern forward |
-| **V** | Rotate 303 pattern backward |
+| **ALT+F** | Rotate 303 pattern forward |
+| **ALT+V** | Rotate 303 pattern backward |
 
 ### 303 Step Editing (when step focused)
 
@@ -606,7 +652,7 @@ MiniAcid can record your sessions to WAV audio files. Recording captures the mas
 |-----|--------|
 | **W** | Toggle accent |
 
-### Automation Editing (303 automation page)
+### Automation Editing (303 & drum automation pages)
 
 | Key | Action |
 |-----|--------|
@@ -614,6 +660,17 @@ MiniAcid can record your sessions to WAV audio files. Recording captures the mas
 | **ENTER** | Add/remove automation node |
 | **BACKSPACE** | Delete automation node |
 | **ALT+LEFT/ALT+RIGHT** | Jump between nodes |
+
+### Drum Settings (Drum Sequencer subpage)
+
+| Key | Action |
+|-----|--------|
+| **A/Z** | Distortion up/down |
+| **S/X** | Compression up/down |
+| **D/C** | Transient sustain up/down |
+| **F/V** | Reverb mix up/down |
+| **G/B** | Reverb decay up/down |
+| **UP/DOWN** | Change kit (when KIT is focused) |
 
 ### Song Mode (on Song page)
 
@@ -665,6 +722,11 @@ MiniAcid can record your sessions to WAV audio files. Recording captures the mas
 - **Active pattern** - Highlighted in bank selector
 
 ### Pattern Automation (303)
+
+- **Click in the automation lane editor** - Add/remove nodes
+- **Click the yellow square** next to a lane label to enable/disable automation
+
+### Drum Automation
 
 - **Click in the automation lane editor** - Add/remove nodes
 - **Click the yellow square** next to a lane label to enable/disable automation

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <new>
 #include <string>
 
 #include "../miniacid_config.h"
@@ -231,8 +232,6 @@ float TempoDelay::process(float input) {
 MiniAcid::MiniAcid(float sampleRate, SceneStorage* sceneStorage)
   : voice303(sampleRate),
     voice3032(sampleRate),
-    drums(std::make_unique<TR808DrumSynthVoice>(sampleRate)),
-    // drums(std::make_unique<TR909DrumSynthVoice>(sampleRate)),
     sampleRateValue(sampleRate),
     drumEngineName_("808"),
     sceneStorage_(sceneStorage),
@@ -265,8 +264,15 @@ MiniAcid::MiniAcid(float sampleRate, SceneStorage* sceneStorage)
     delay303(sampleRate),
     delay3032(sampleRate),
     distortion303(),
-    distortion3032() {
+    distortion3032(),
+    drumDistortion(),
+    drumCompressor(),
+    drumTransientShaper(),
+    drumReverb() {
   if (sampleRateValue <= 0.0f) sampleRateValue = 44100.0f;
+  createDrumEngine(DrumEngineType::TR808);
+  drumTransientShaper.setSampleRate(sampleRateValue);
+  drumReverb.setSampleRate(sampleRateValue);
   reset();
 }
 
@@ -276,6 +282,26 @@ void MiniAcid::init() {
   params[static_cast<int>(MiniAcidParamId::MainVolume)] = Parameter("vol", "", 0.0f, 1.0f, 0.8f, 1.0f / 128);
   params[static_cast<int>(MiniAcidParamId::DrumEngine)] =
     Parameter("eng", "", kDrumEngineOptions, kDrumEngineOptionCount, 0);
+  params[static_cast<int>(MiniAcidParamId::DrumVolume)] =
+    Parameter("dvol", "", 0.0f, 1.0f, 1.0f, 1.0f / 128);
+  params[static_cast<int>(MiniAcidParamId::DrumDistortion)] =
+    Parameter("dist", "", 0.0f, 1.0f, 0.0f, 1.0f / 128);
+  params[static_cast<int>(MiniAcidParamId::DrumCompression)] =
+    Parameter("comp", "", 0.0f, 1.0f, 0.0f, 1.0f / 128);
+  params[static_cast<int>(MiniAcidParamId::DrumTransientAttack)] =
+    Parameter("atk", "", -1.0f, 1.0f, 0.0f, 1.0f / 128);
+  params[static_cast<int>(MiniAcidParamId::DrumTransientSustain)] =
+    Parameter("sus", "", -1.0f, 1.0f, 0.0f, 1.0f / 128);
+  params[static_cast<int>(MiniAcidParamId::DrumReverbMix)] =
+    Parameter("rvb", "", 0.0f, 1.0f, 0.0f, 1.0f / 128);
+  params[static_cast<int>(MiniAcidParamId::DrumReverbDecay)] =
+    Parameter("rdec", "", 0.0f, 1.0f, 0.3f, 1.0f / 128);
+  updateDrumDistortion(params[static_cast<int>(MiniAcidParamId::DrumDistortion)].value());
+  updateDrumCompression(params[static_cast<int>(MiniAcidParamId::DrumCompression)].value());
+  updateDrumTransientAttack(params[static_cast<int>(MiniAcidParamId::DrumTransientAttack)].value());
+  updateDrumTransientSustain(params[static_cast<int>(MiniAcidParamId::DrumTransientSustain)].value());
+  updateDrumReverbMix(params[static_cast<int>(MiniAcidParamId::DrumReverbMix)].value());
+  updateDrumReverbDecay(params[static_cast<int>(MiniAcidParamId::DrumReverbDecay)].value());
 
   // maybe move everything from the constructor here later
   sceneStorage_->initializeStorage();
@@ -291,7 +317,7 @@ void MiniAcid::reset() {
   voice3032.adjustParameter(TB303ParamId::Cutoff, -3);
   voice3032.adjustParameter(TB303ParamId::Resonance, -3);
   voice3032.adjustParameter(TB303ParamId::EnvAmount, -1);
-  drums->reset();
+    drums->reset();
   playing = false;
   mute303 = false;
   mute303_2 = false;
@@ -325,6 +351,14 @@ void MiniAcid::reset() {
   delay3032.setBpm(bpmValue);
   distortion303.setEnabled(distortion303Enabled);
   distortion3032.setEnabled(distortion3032Enabled);
+  drumDistortion.setEnabled(false);
+  drumDistortion.setMix(0.0f);
+  drumDistortion.setDrive(1.0f);
+  drumCompressor.setEnabled(false);
+  drumCompressor.setMix(0.0f);
+  drumCompressor.setAmount(0.0f);
+  drumTransientShaper.reset();
+  drumReverb.reset();
   lastBufferCount = 0;
   for (int i = 0; i < AUDIO_BUFFER_SAMPLES; ++i) lastBuffer[i] = 0;
   automationSampleCountdown_ = 0;
@@ -433,6 +467,20 @@ const Parameter& MiniAcid::drumParameter(DrumAutomationParamId id) const {
   switch (id) {
     case DrumAutomationParamId::DrumEngine:
       return params[static_cast<int>(MiniAcidParamId::DrumEngine)];
+    case DrumAutomationParamId::DrumVolume:
+      return params[static_cast<int>(MiniAcidParamId::DrumVolume)];
+    case DrumAutomationParamId::Distortion:
+      return params[static_cast<int>(MiniAcidParamId::DrumDistortion)];
+    case DrumAutomationParamId::Compression:
+      return params[static_cast<int>(MiniAcidParamId::DrumCompression)];
+    case DrumAutomationParamId::TransientAttack:
+      return params[static_cast<int>(MiniAcidParamId::DrumTransientAttack)];
+    case DrumAutomationParamId::TransientSustain:
+      return params[static_cast<int>(MiniAcidParamId::DrumTransientSustain)];
+    case DrumAutomationParamId::ReverbMix:
+      return params[static_cast<int>(MiniAcidParamId::DrumReverbMix)];
+    case DrumAutomationParamId::ReverbDecay:
+      return params[static_cast<int>(MiniAcidParamId::DrumReverbDecay)];
     default:
       return params[static_cast<int>(MiniAcidParamId::DrumEngine)];
   }
@@ -675,13 +723,16 @@ std::vector<std::string> MiniAcid::getAvailableDrumEngines() const {
 void MiniAcid::setDrumEngine(const std::string& engineName) {
   std::string name = toLowerCopy(engineName);
   if (name.find("909") != std::string::npos) {
-    drums = std::make_unique<TR909DrumSynthVoice>(sampleRateValue);
+    if (drumEngineName_ == "909") return;
+    createDrumEngine(DrumEngineType::TR909);
     drumEngineName_ = "909";
   } else if (name.find("606") != std::string::npos) {
-    drums = std::make_unique<TR606DrumSynthVoice>(sampleRateValue);
+    if (drumEngineName_ == "606") return;
+    createDrumEngine(DrumEngineType::TR606);
     drumEngineName_ = "606";
   } else if (name.find("808") != std::string::npos) {
-    drums = std::make_unique<TR808DrumSynthVoice>(sampleRateValue);
+    if (drumEngineName_ == "808") return;
+    createDrumEngine(DrumEngineType::TR808);
     drumEngineName_ = "808";
   } else {
     return;
@@ -692,6 +743,39 @@ void MiniAcid::setDrumEngine(const std::string& engineName) {
     drumEngineName_.c_str());
   if (optionIndex >= 0) {
     params[static_cast<int>(MiniAcidParamId::DrumEngine)].setValue(static_cast<float>(optionIndex));
+  }
+}
+
+void MiniAcid::destroyDrumEngine() {
+  if (!drums) return;
+  switch (drum_engine_type_) {
+    case DrumEngineType::TR808:
+      reinterpret_cast<TR808DrumSynthVoice*>(drums)->~TR808DrumSynthVoice();
+      break;
+    case DrumEngineType::TR909:
+      reinterpret_cast<TR909DrumSynthVoice*>(drums)->~TR909DrumSynthVoice();
+      break;
+    case DrumEngineType::TR606:
+      reinterpret_cast<TR606DrumSynthVoice*>(drums)->~TR606DrumSynthVoice();
+      break;
+  }
+  drums = nullptr;
+}
+
+void MiniAcid::createDrumEngine(DrumEngineType type) {
+  if (drums && drum_engine_type_ == type) return;
+  destroyDrumEngine();
+  drum_engine_type_ = type;
+  switch (type) {
+    case DrumEngineType::TR808:
+      drums = new (&drum_storage_) TR808DrumSynthVoice(sampleRateValue);
+      break;
+    case DrumEngineType::TR909:
+      drums = new (&drum_storage_) TR909DrumSynthVoice(sampleRateValue);
+      break;
+    case DrumEngineType::TR606:
+      drums = new (&drum_storage_) TR606DrumSynthVoice(sampleRateValue);
+      break;
   }
 }
 
@@ -1123,15 +1207,36 @@ void MiniAcid::applyDrumAutomation(float t) {
       paramValue = minVal + norm * (maxVal - minVal);
     }
     int optionIndex = static_cast<int>(paramValue + 0.5f);
-    const char* label = param.optionLabelAt(optionIndex);
-    if (label) {
-      if (drumEngineName_ != label) {
-        setDrumEngine(label);
+#if MINIACID_PERF_TEST_DISABLE_DRUM_ENGINE_AUTOMATION
+    if (paramId == DrumAutomationParamId::DrumEngine) {
+      continue;
+    }
+#endif
+    if (paramId == DrumAutomationParamId::DrumEngine) {
+      const char* label = param.optionLabelAt(optionIndex);
+      if (label) {
+        if (drumEngineName_ != label) {
+          setDrumEngine(label);
+        } else {
+          params[static_cast<int>(MiniAcidParamId::DrumEngine)].setValue(paramValue);
+        }
       } else {
-        params[static_cast<int>(MiniAcidParamId::DrumEngine)].setValue(paramValue);
+        setParameter(MiniAcidParamId::DrumEngine, paramValue);
       }
-    } else {
-      setParameter(MiniAcidParamId::DrumEngine, paramValue);
+    } else if (paramId == DrumAutomationParamId::DrumVolume) {
+      setParameter(MiniAcidParamId::DrumVolume, paramValue);
+    } else if (paramId == DrumAutomationParamId::Distortion) {
+      setParameter(MiniAcidParamId::DrumDistortion, paramValue);
+    } else if (paramId == DrumAutomationParamId::Compression) {
+      setParameter(MiniAcidParamId::DrumCompression, paramValue);
+    } else if (paramId == DrumAutomationParamId::TransientAttack) {
+      setParameter(MiniAcidParamId::DrumTransientAttack, paramValue);
+    } else if (paramId == DrumAutomationParamId::TransientSustain) {
+      setParameter(MiniAcidParamId::DrumTransientSustain, paramValue);
+    } else if (paramId == DrumAutomationParamId::ReverbMix) {
+      setParameter(MiniAcidParamId::DrumReverbMix, paramValue);
+    } else if (paramId == DrumAutomationParamId::ReverbDecay) {
+      setParameter(MiniAcidParamId::DrumReverbDecay, paramValue);
     }
   }
 }
@@ -1157,20 +1262,22 @@ void MiniAcid::advanceStep() {
       advanceSongPlayhead();
     }
   }
+#if !MINIACID_PERF_TEST_DISABLE_DRUM_AUTOMATION
   applyDrumAutomation(static_cast<float>(currentStepIndex));
+#endif
 
   // DEBUG: toggle drum kit every measure for testing
   /*
   if (prevStep >= 0 && currentStepIndex == 0) {
     drumCycleIndex_ = (drumCycleIndex_ + 1) % 3;
     if (drumCycleIndex_ == 0) {
-      drums = std::make_unique<TR808DrumSynthVoice>(sampleRateValue);
+      createDrumEngine(DrumEngineType::TR808);
       // printf("Switched to TR-808 drum kit\n");
     } else if (drumCycleIndex_ == 1) {
-      drums = std::make_unique<TR909DrumSynthVoice>(sampleRateValue);
+      createDrumEngine(DrumEngineType::TR909);
       // printf("Switched to TR-909 drum kit\n");
     } else {
-      drums = std::make_unique<TR606DrumSynthVoice>(sampleRateValue);
+      createDrumEngine(DrumEngineType::TR606);
       // printf("Switched to TR-606 drum kit\n");
     }
   }
@@ -1268,6 +1375,7 @@ void MiniAcid::generateAudioBuffer(int16_t *buffer, size_t numSamples) {
     }
 
     float sample = 0.0f;
+    float drumSample = 0.0f;
     if (playing) {
       float sample303 = 0.0f;
       if (!mute303) {
@@ -1286,23 +1394,30 @@ void MiniAcid::generateAudioBuffer(int16_t *buffer, size_t numSamples) {
         delay3032.process(0.0f);
       }
       if (!muteKick)
-        sample += drums->processKick();
+        drumSample += drums->processKick();
       if (!muteSnare)
-        sample += drums->processSnare();
+        drumSample += drums->processSnare();
       if (!muteHat)
-        sample += drums->processHat();
+        drumSample += drums->processHat();
       if (!muteOpenHat)
-        sample += drums->processOpenHat();
+        drumSample += drums->processOpenHat();
       if (!muteMidTom)
-        sample += drums->processMidTom();
+        drumSample += drums->processMidTom();
       if (!muteHighTom)
-        sample += drums->processHighTom();
+        drumSample += drums->processHighTom();
       if (!muteRim)
-        sample += drums->processRim();
+        drumSample += drums->processRim();
       if (!muteClap)
         // sample += drums->processCymbal();
-        sample += drums->processClap();
-      sample += sample303;
+        drumSample += drums->processClap();
+#if !MINIACID_PERF_TEST_DISABLE_DRUM_FX
+      drumSample = drumTransientShaper.process(drumSample);
+      drumSample = drumDistortion.process(drumSample);
+      drumSample = drumCompressor.process(drumSample);
+      drumSample = drumReverb.process(drumSample);
+#endif
+      float drumVolume = params[static_cast<int>(MiniAcidParamId::DrumVolume)].value();
+      sample = drumSample * drumVolume + sample303;
     }
 
     // Soft clipping/limiting
@@ -1340,6 +1455,24 @@ void MiniAcid::setParameter(MiniAcidParamId id, float value) {
     return;
   }
   params[static_cast<int>(id)].setValue(value);
+  if (id == MiniAcidParamId::DrumDistortion) {
+    updateDrumDistortion(params[static_cast<int>(id)].value());
+  }
+  if (id == MiniAcidParamId::DrumCompression) {
+    updateDrumCompression(params[static_cast<int>(id)].value());
+  }
+  if (id == MiniAcidParamId::DrumTransientAttack) {
+    updateDrumTransientAttack(params[static_cast<int>(id)].value());
+  }
+  if (id == MiniAcidParamId::DrumTransientSustain) {
+    updateDrumTransientSustain(params[static_cast<int>(id)].value());
+  }
+  if (id == MiniAcidParamId::DrumReverbMix) {
+    updateDrumReverbMix(params[static_cast<int>(id)].value());
+  }
+  if (id == MiniAcidParamId::DrumReverbDecay) {
+    updateDrumReverbDecay(params[static_cast<int>(id)].value());
+  }
 }
 
 void MiniAcid::adjustParameter(MiniAcidParamId id, int steps) {
@@ -1353,10 +1486,71 @@ void MiniAcid::adjustParameter(MiniAcidParamId id, int steps) {
     return;
   }
   params[static_cast<int>(id)].addSteps(steps);
+  if (id == MiniAcidParamId::DrumDistortion) {
+    updateDrumDistortion(params[static_cast<int>(id)].value());
+  }
+  if (id == MiniAcidParamId::DrumCompression) {
+    updateDrumCompression(params[static_cast<int>(id)].value());
+  }
+  if (id == MiniAcidParamId::DrumTransientAttack) {
+    updateDrumTransientAttack(params[static_cast<int>(id)].value());
+  }
+  if (id == MiniAcidParamId::DrumTransientSustain) {
+    updateDrumTransientSustain(params[static_cast<int>(id)].value());
+  }
+  if (id == MiniAcidParamId::DrumReverbMix) {
+    updateDrumReverbMix(params[static_cast<int>(id)].value());
+  }
+  if (id == MiniAcidParamId::DrumReverbDecay) {
+    updateDrumReverbDecay(params[static_cast<int>(id)].value());
+  }
 }
 
 void MiniAcid::randomizeDrumPattern() {
   PatternGenerator::generateRandomDrumPattern(sceneManager_.editCurrentDrumPattern());
+}
+
+void MiniAcid::updateDrumDistortion(float value) {
+  float mix = value;
+  if (mix < 0.0f) mix = 0.0f;
+  if (mix > 1.0f) mix = 1.0f;
+  float drive = 1.0f + mix * 9.0f;
+  drumDistortion.setDrive(drive);
+  drumDistortion.setMix(mix);
+  drumDistortion.setEnabled(mix > 0.0001f);
+}
+
+void MiniAcid::updateDrumCompression(float value) {
+  float amount = value;
+  if (amount < 0.0f) amount = 0.0f;
+  if (amount > 1.0f) amount = 1.0f;
+  drumCompressor.setAmount(amount);
+  drumCompressor.setMix(amount);
+  drumCompressor.setEnabled(amount > 0.0001f);
+}
+
+void MiniAcid::updateDrumTransientAttack(float value) {
+  if (value < -1.0f) value = -1.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumTransientShaper.setAttackAmount(value);
+}
+
+void MiniAcid::updateDrumTransientSustain(float value) {
+  if (value < -1.0f) value = -1.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumTransientShaper.setSustainAmount(value);
+}
+
+void MiniAcid::updateDrumReverbMix(float value) {
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumReverb.setMix(value);
+}
+
+void MiniAcid::updateDrumReverbDecay(float value) {
+  if (value < 0.0f) value = 0.0f;
+  if (value > 1.0f) value = 1.0f;
+  drumReverb.setDecay(value);
 }
 
 std::string MiniAcid::currentSceneName() const {
@@ -1381,8 +1575,10 @@ bool MiniAcid::loadSceneByName(const std::string& name) {
   std::string previousName = sceneStorage_->getCurrentSceneName();
   sceneStorage_->setCurrentSceneName(name);
 
+  // try to load scene using file streaming
   bool loaded = sceneStorage_->readScene(sceneManager_);
   if (!loaded) {
+    // fallback to string serialization method
     std::string serialized;
     loaded = sceneStorage_->readScene(serialized) && sceneManager_.loadScene(serialized);
   }
@@ -1444,6 +1640,13 @@ void MiniAcid::applySceneStateFromManager() {
   if (!drumEngineName.empty()) {
     setDrumEngine(drumEngineName);
   }
+  setParameter(MiniAcidParamId::DrumVolume, sceneManager_.getDrumVolume());
+  setParameter(MiniAcidParamId::DrumDistortion, sceneManager_.getDrumDistortion());
+  setParameter(MiniAcidParamId::DrumCompression, sceneManager_.getDrumCompression());
+  setParameter(MiniAcidParamId::DrumTransientAttack, sceneManager_.getDrumTransientAttack());
+  setParameter(MiniAcidParamId::DrumTransientSustain, sceneManager_.getDrumTransientSustain());
+  setParameter(MiniAcidParamId::DrumReverbMix, sceneManager_.getDrumReverbMix());
+  setParameter(MiniAcidParamId::DrumReverbDecay, sceneManager_.getDrumReverbDecay());
   mute303 = sceneManager_.getSynthMute(0);
   mute303_2 = sceneManager_.getSynthMute(1);
 
@@ -1492,6 +1695,13 @@ void MiniAcid::applySceneStateFromManager() {
 void MiniAcid::syncSceneStateToManager() {
   sceneManager_.setBpm(bpmValue);
   sceneManager_.setDrumEngineName(drumEngineName_);
+  sceneManager_.setDrumVolume(params[static_cast<int>(MiniAcidParamId::DrumVolume)].value());
+  sceneManager_.setDrumDistortion(params[static_cast<int>(MiniAcidParamId::DrumDistortion)].value());
+  sceneManager_.setDrumCompression(params[static_cast<int>(MiniAcidParamId::DrumCompression)].value());
+  sceneManager_.setDrumTransientAttack(params[static_cast<int>(MiniAcidParamId::DrumTransientAttack)].value());
+  sceneManager_.setDrumTransientSustain(params[static_cast<int>(MiniAcidParamId::DrumTransientSustain)].value());
+  sceneManager_.setDrumReverbMix(params[static_cast<int>(MiniAcidParamId::DrumReverbMix)].value());
+  sceneManager_.setDrumReverbDecay(params[static_cast<int>(MiniAcidParamId::DrumReverbDecay)].value());
   sceneManager_.setSynthMute(0, mute303);
   sceneManager_.setSynthMute(1, mute303_2);
 

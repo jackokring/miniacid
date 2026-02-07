@@ -115,6 +115,13 @@ struct AutomationLane {
 
 enum class DrumAutomationParamId : uint8_t {
   DrumEngine = 0,
+  Distortion = 1,
+  Compression = 2,
+  TransientAttack = 3,
+  TransientSustain = 4,
+  ReverbMix = 5,
+  ReverbDecay = 6,
+  DrumVolume = 7,
   Count
 };
 
@@ -226,6 +233,9 @@ public:
   void onObjectValueEnd() override;
 
   bool hadError() const;
+  const std::string& lastKey() const;
+  const char* currentPathName() const;
+  int stackSize() const;
   int drumPatternIndex() const;
   int synthPatternIndex(int synthIdx) const;
   int drumBankIndex() const;
@@ -234,6 +244,13 @@ public:
   bool synthMute(int idx) const;
   bool synthDistortionEnabled(int idx) const;
   bool synthDelayEnabled(int idx) const;
+  float drumVolume() const;
+  float drumDistortion() const;
+  float drumCompression() const;
+  float drumTransientAttack() const;
+  float drumTransientSustain() const;
+  float drumReverbMix() const;
+  float drumReverbDecay() const;
   const SynthParameters& synthParameters(int synthIdx) const;
   float bpm() const;
   const Song& song() const;
@@ -319,6 +336,13 @@ private:
   bool synthMute_[2] = {false, false};
   bool synthDistortion_[2] = {false, false};
   bool synthDelay_[2] = {false, false};
+  float drumVolume_ = 1.0f;
+  float drumDistortion_ = 0.0f;
+  float drumCompression_ = 0.0f;
+  float drumTransientAttack_ = 0.0f;
+  float drumTransientSustain_ = 0.0f;
+  float drumReverbMix_ = 0.0f;
+  float drumReverbDecay_ = 0.3f;
   SynthParameters synthParameters_[2];
   float bpm_ = 100.0f;
   Song song_;
@@ -381,6 +405,20 @@ public:
   bool getSynthDistortionEnabled(int synthIdx) const;
   void setSynthDelayEnabled(int synthIdx, bool enabled);
   bool getSynthDelayEnabled(int synthIdx) const;
+  void setDrumDistortion(float value);
+  float getDrumDistortion() const;
+  void setDrumCompression(float value);
+  float getDrumCompression() const;
+  void setDrumVolume(float value);
+  float getDrumVolume() const;
+  void setDrumTransientAttack(float value);
+  float getDrumTransientAttack() const;
+  void setDrumTransientSustain(float value);
+  float getDrumTransientSustain() const;
+  void setDrumReverbMix(float value);
+  float getDrumReverbMix() const;
+  void setDrumReverbDecay(float value);
+  float getDrumReverbDecay() const;
   void setSynthParameters(int synthIdx, const SynthParameters& params);
   const SynthParameters& getSynthParameters(int synthIdx) const;
   void setDrumEngineName(const std::string& name);
@@ -433,6 +471,13 @@ private:
   bool synthMute_[2] = {false, false};
   bool synthDistortion_[2] = {false, false};
   bool synthDelay_[2] = {false, false};
+  float drumVolume_ = 1.0f;
+  float drumDistortion_ = 0.0f;
+  float drumCompression_ = 0.0f;
+  float drumTransientAttack_ = 0.0f;
+  float drumTransientSustain_ = 0.0f;
+  float drumReverbMix_ = 0.0f;
+  float drumReverbDecay_ = 0.3f;
   SynthParameters synthParameters_[2];
   float bpm_ = 100.0f;
   bool songMode_ = false;
@@ -709,6 +754,20 @@ bool SceneManager::writeSceneJson(TWriter&& writer) const {
   if (!writeInt(drumBankIndex_)) return false;
   if (!writeLiteral(",\"drumEngine\":")) return false;
   if (!writeString(drumEngineName_)) return false;
+  if (!writeLiteral(",\"drumVolume\":")) return false;
+  if (!writeFloat(drumVolume_)) return false;
+  if (!writeLiteral(",\"drumDistortion\":")) return false;
+  if (!writeFloat(drumDistortion_)) return false;
+  if (!writeLiteral(",\"drumCompression\":")) return false;
+  if (!writeFloat(drumCompression_)) return false;
+  if (!writeLiteral(",\"drumTransientAttack\":")) return false;
+  if (!writeFloat(drumTransientAttack_)) return false;
+  if (!writeLiteral(",\"drumTransientSustain\":")) return false;
+  if (!writeFloat(drumTransientSustain_)) return false;
+  if (!writeLiteral(",\"drumReverbMix\":")) return false;
+  if (!writeFloat(drumReverbMix_)) return false;
+  if (!writeLiteral(",\"drumReverbDecay\":")) return false;
+  if (!writeFloat(drumReverbDecay_)) return false;
   if (!writeLiteral(",\"synthBankIndex\":[")) return false;
   if (!writeInt(synthBankIndex_[0])) return false;
   if (!writeChar(',')) return false;

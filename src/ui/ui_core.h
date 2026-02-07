@@ -111,6 +111,9 @@ class Rect {
       h = h - amount;
       return return_rect;
     }
+    Rect copy() const {
+      return Rect(x, y, w, h);
+    }
   
 };
 class Frame {

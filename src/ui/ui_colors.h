@@ -29,6 +29,8 @@ inline constexpr IGfxColor COLOR_KNOB_1 = IGfxColor::Orange();
 inline constexpr IGfxColor COLOR_KNOB_2 = IGfxColor::Cyan();
 inline constexpr IGfxColor COLOR_KNOB_3 = IGfxColor::Magenta();
 inline constexpr IGfxColor COLOR_KNOB_4 = IGfxColor::Green();
+inline constexpr IGfxColor COLOR_KNOB_5 = IGfxColor::Blue();
+inline constexpr IGfxColor COLOR_KNOB_6 = IGfxColor::Red();
 inline constexpr IGfxColor COLOR_KNOB_CONTROL = IGfxColor::Yellow();
 inline constexpr IGfxColor COLOR_STEP_SELECTED = IGfxColor::Orange();
 inline constexpr IGfxColor COLOR_PATTERN_SELECTED_FILL = IGfxColor::Blue();
@@ -40,4 +42,3 @@ inline constexpr IGfxColor WAVE_COLORS[] = {
   IGfxColor::White(),
 };
 inline constexpr int NUM_WAVE_COLORS = static_cast<int>(sizeof(WAVE_COLORS) / sizeof(WAVE_COLORS[0]));
-
